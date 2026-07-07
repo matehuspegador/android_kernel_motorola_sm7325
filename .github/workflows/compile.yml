@@ -27,7 +27,7 @@ jobs:
     - name: Configurar e Integrar o KernelSU
       run: |
         cd $GITHUB_WORKSPACE
-        curl -LSs "https://githubusercontent.com" | bash -s main
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
     - name: Iniciar a Compilação do Kernel com Otimizações Customizadas
       run: |
