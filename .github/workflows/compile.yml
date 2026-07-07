@@ -35,7 +35,7 @@ jobs:
         cd $GITHUB_WORKSPACE
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
-    - name: Iniciar a Compilação do Kernel com Otimizações Customizadas
+        - name: Iniciar a Compilação do Kernel com Otimizações Customizadas
       run: |
         cd $GITHUB_WORKSPACE
         
@@ -117,10 +117,10 @@ jobs:
         CONFIG_BUILD_ARM64_DT_OVERLAY=y
         EOF
         
-        # 3. Validar a árvore final corrigindo as dependências automaticamente
-        make O=out olddefconfig
+        # 3. Validar a árvore final corrigindo as dependências automaticamente usando o linker do host
+        make O=out HOSTLDFLAGS="-fuse-ld=lld" olddefconfig
         
-        # 4. Compilação usando os binários do Proton Clang nativos
+        # 4. Compilação usando os binários do Proton Clang para o Kernel e o linker do host para os binários locais (fixdep)
         make O=out \
           CC=clang \
           LD=ld.lld \
@@ -133,7 +133,9 @@ jobs:
           CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
           LLVM=1 \
           LLVM_IAS=1 \
+          HOSTLDFLAGS="-fuse-ld=lld" \
           -j$(nproc)
+
 
     - name: Fazer o Upload do Kernel Otimizado Pronto
       uses: actions/upload-artifact@v4
