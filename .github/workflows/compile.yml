@@ -22,7 +22,7 @@ jobs:
     - name: Baixar o Proton Clang Oficial
       run: |
         cd $GITHUB_WORKSPACE
-        git clone --depth=1 https://github.com proton-clang
+        git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
 
     - name: Configurar e Integrar o KernelSU
       run: |
