@@ -1,0 +1,186 @@
+name: Build sm7325 Kernel 5.4 (Otimizado FPS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_branch:
+        description: "Branch do kernel"
+        required: true
+        default: "lineage-22.2"
+      defconfig_fragments:
+        description: "Defconfigs"
+        required: true
+        default: "vendor/lahaina-qgki_defconfig vendor/lineage_moto-lahaina.config vendor/lineage_dubai.config"
+      device_codename:
+        description: "Codinome do dispositivo"
+        required: true
+        default: "dubai"
+      apply_perf_tuning:
+        description: "Aplicar tuning de desempenho"
+        type: boolean
+        default: true
+      integrate_kernelsu:
+        description: "Integrar KernelSU"
+        type: boolean
+        default: true
+      kernelsu_variant:
+        description: "KernelSU Variant"
+        type: choice
+        options:
+          - "tiann/KernelSU (oficial)"
+          - "KernelSU-Next (fork da comunidade)"
+        default: "tiann/KernelSU (oficial)"
+
+env:
+  KERNEL_REPO: https://github.com/LineageOS/android_kernel_motorola_sm7325.git
+  KERNEL_DIR: kernel_src
+  OUT_DIR: out
+  ARCH: arm64
+  ANYKERNEL_REPO: https://github.com/osm0sis/AnyKernel3.git
+  CLANG_URL: https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/latest/download/neutron-clang.tar.zst
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout deste repositório (com pasta patches/)
+        uses: actions/checkout@v4
+
+      - name: Liberar espaço no runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -a -f
+          df -h
+
+      - name: Instalar dependências
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex git \
+            libelf-dev libssl-dev liblz4-tool libncurses5-dev lzop zip zstd \
+            device-tree-compiler
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-sm7325-5.4-${{ github.sha }}
+          restore-keys: ccache-sm7325-5.4-
+
+      - name: Clonar kernel
+        run: |
+          git clone --depth=1 -b "${{ github.event.inputs.kernel_branch }}" \
+            "${{ env.KERNEL_REPO }}" "${{ env.KERNEL_DIR }}"
+
+      - name: Baixar Toolchain Neutron Clang
+        run: |
+          mkdir -p clang
+          curl -L "${{ env.CLANG_URL }}" -o clang.tar.zst
+          tar --use-compress-program=unzstd -xf clang.tar.zst -C clang
+          echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
+
+      - name: Aplicar patches da pasta patches/ (Melhorado)
+        run: |
+          cd "${{ env.KERNEL_DIR }}"
+          git config user.email "ci@localhost"
+          git config user.name "CI Bot"
+          
+          echo "=== Verificando patches ==="
+          ls -la ../patches/ 2>/dev/null || echo "Pasta patches/ não encontrada ou vazia"
+          
+          if [ -d "../patches" ] && [ "$(ls -A ../patches/*.patch 2>/dev/null)" ]; then
+            echo "Aplicando patches em ordem numérica..."
+            for p in $(ls ../patches/*.patch | sort); do
+              echo "==> Aplicando: $(basename $p)"
+              if git am --3way "$p" 2>/dev/null; then
+                echo "   ✓ Aplicado com sucesso"
+              else
+                echo "   ⚠️  git am falhou, tentando git apply..."
+                if git apply --reject --whitespace=fix "$p" 2>/dev/null; then
+                  echo "   ✓ Aplicado com git apply"
+                else
+                  echo "   ❌ Falha ao aplicar $p"
+                  echo "   Verifique o patch manualmente!"
+                  exit 1
+                fi
+              fi
+            done
+            echo "Todos os patches aplicados com sucesso!"
+          else
+            echo "⚠️ Nenhuma patch encontrada na pasta patches/. Continuando sem patches."
+          fi
+
+      - name: Integrar KernelSU
+        if: ${{ github.event.inputs.integrate_kernelsu == 'true' }}
+        run: |
+          cd "${{ env.KERNEL_DIR }}"
+          if [ "${{ github.event.inputs.kernelsu_variant }}" = "KernelSU-Next (fork da comunidade)" ]; then
+            curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -s --
+          else
+            curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s --
+          fi
+
+      - name: Configurar defconfig
+        run: |
+          cd "${{ env.KERNEL_DIR }}"
+          make O=../${{ env.OUT_DIR }} ARCH=${{ env.ARCH }} \
+            ${{ github.event.inputs.defconfig_fragments }}
+
+      - name: Aplicar tuning de desempenho
+        if: ${{ github.event.inputs.apply_perf_tuning == 'true' }}
+        run: |
+          cd "${{ env.KERNEL_DIR }}"
+          CFG="./scripts/config --file ../${{ env.OUT_DIR }}/.config"
+          
+          $CFG -e CONFIG_CPU_FREQ_GOV_SCHEDUTIL -e CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL
+          $CFG -e CONFIG_HZ_300 -d CONFIG_HZ_100 -d CONFIG_HZ_250
+          $CFG -e CONFIG_ZRAM -e CONFIG_ZRAM_DEF_COMP_LZ4
+          $CFG -e CONFIG_TRANSPARENT_HUGEPAGE
+          $CFG -e CONFIG_IOSCHED_BFQ -e CONFIG_BFQ_GROUP_IOSCHED
+          $CFG -d CONFIG_DEBUG_KERNEL -d CONFIG_FTRACE -d CONFIG_SCHED_DEBUG
+          $CFG -e CONFIG_OVERLAY_FS -e CONFIG_MODULES
+
+      - name: Habilitar KernelSU no config
+        if: ${{ github.event.inputs.integrate_kernelsu == 'true' }}
+        run: |
+          cd "${{ env.KERNEL_DIR }}"
+          ./scripts/config --file ../${{ env.OUT_DIR }}/.config \
+            -e CONFIG_KSU -e CONFIG_KPROBES -e CONFIG_MODULES
+
+      - name: Finalizar config e compilar
+        run: |
+          cd "${{ env.KERNEL_DIR }}"
+          make O=../${{ env.OUT_DIR }} ARCH=${{ env.ARCH }} olddefconfig
+          
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          make -j$(nproc) O=../${{ env.OUT_DIR }} ARCH=${{ env.ARCH }} \
+            CC="ccache clang" LLVM=1 LLVM_IAS=1 \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            KCFLAGS="-O3 -flto=thin -fomit-frame-pointer" \
+            2>&1 | tee build.log
+
+      - name: Verificar Image
+        run: |
+          IMG=$(find "${{ env.OUT_DIR }}" -name "Image*" | head -n1)
+          if [ -z "$IMG" ]; then
+            echo "Build falhou!"
+            tail -n 100 build.log
+            exit 1
+          fi
+          echo "IMG_PATH=$IMG" >> $GITHUB_ENV
+
+      - name: Empacotar AnyKernel3
+        run: |
+          git clone --depth=1 ${{ env.ANYKERNEL_REPO }} anykernel
+          cp $IMG_PATH anykernel/
+          find ${{ env.OUT_DIR }} -name "*.dtb" -exec cp {} anykernel/ \;
+          cd anykernel
+          zip -r9 "../${{ github.event.inputs.device_codename }}-kernel-5.4-$(date +%Y%m%d-%H%M).zip" . -x ".git*"
+
+      - name: Upload do kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-dubai-5.4
+          path: "*.zip"
+          retention-days: 14
