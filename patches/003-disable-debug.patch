@@ -1,0 +1,10 @@
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 0000000..2222222 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -100,7 +100,7 @@
+  * Lower latency for gaming
+  */
+ unsigned int sysctl_sched_latency = 4;
+-int sched_boost = 1;
++int sched_boost = 2;   // Boost leve para jogos
