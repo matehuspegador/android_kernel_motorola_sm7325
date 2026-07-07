@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # Executa na nuvem x86_64 pura do GitHub
+    runs-on: ubuntu-20.04 # Executa na nuvem x86_64 pura do GitHub
 
     steps:
     - name: Baixar o Código do Kernel
