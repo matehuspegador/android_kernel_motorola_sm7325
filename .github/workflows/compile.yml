@@ -54,6 +54,7 @@ jobs:
           2>/dev/null || true
 
 
+
     - name: Integrar KernelSU
       run: |
         curl -LSs \
@@ -69,6 +70,8 @@ jobs:
 
 
         printf '%s\n' \
+        'CONFIG_ARCH_QCOM=y' \
+        'CONFIG_NET=y' \
         'CONFIG_ARCH_MMAP_RND_BITS=24' \
         'CONFIG_ARM64_ERRATUM_1542419=y' \
         'CONFIG_ARM64_ERRATUM_1508412=y' \
@@ -94,8 +97,6 @@ jobs:
         'CONFIG_LZ4_COMPRESS=y' \
         'CONFIG_SWAP=y' \
         'CONFIG_TRANSPARENT_HUGEPAGE=y' \
-        'CONFIG_TMPFS_POSIX_ACL=y' \
-        'CONFIG_TMPFS_XATTR=y' \
         'CONFIG_TCP_CONG_BBR=y' \
         'CONFIG_NET_SCH_FQ=y' \
         'CONFIG_NET_SCH_FQ_CODEL=y' \
@@ -149,14 +150,11 @@ jobs:
 
     - name: Compilar Kernel
       run: |
-    - name: Compilar Kernel
-      run: |
 
         export PATH="$GITHUB_WORKSPACE/proton-clang/bin:$PATH"
 
         export ARCH=arm64
         export SUBARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-
 
 
         make -j$(nproc) \
@@ -177,19 +175,28 @@ jobs:
 
 
 
-    - name: Verificar Build
+    - name: Instalar mkdtimg
       run: |
 
-        echo "Arquivos boot:"
+        git clone --depth=1 \
+          https://android.googlesource.com/platform/system/libufdt \
+          libufdt
 
-        ls -lh out/arch/arm64/boot
+
+        cd libufdt
 
 
-        echo "DTBO encontrados:"
+        gcc \
+          utils/src/mkdtimg.c \
+          utils/src/util.c \
+          -Iinclude \
+          -o ../mkdtimg
 
-        find out/arch/arm64/boot \
-        -name "*.dtbo" || true
 
+        cd ..
+
+
+        chmod +x mkdtimg
 
 
 
@@ -221,7 +228,6 @@ jobs:
 
 
 
-
         if [ -f out/arch/arm64/boot/dtbo.img ]; then
 
 
@@ -247,8 +253,8 @@ jobs:
             echo "Gerando dtbo.img"
 
 
-
-            mkdtimg create \
+            $GITHUB_WORKSPACE/mkdtimg \
+              create \
               anykernel/dtbo.img \
               --page_size=4096 \
               $DTBO
@@ -269,7 +275,6 @@ jobs:
 
 
 
-
     - name: Configurar AnyKernel
       run: |
 
@@ -279,11 +284,9 @@ jobs:
         anykernel/anykernel.sh
 
 
-
         sed -i \
         's/device.name1=.*/device.name1=dubai/' \
         anykernel/anykernel.sh
-
 
 
         sed -i \
@@ -292,12 +295,10 @@ jobs:
 
 
 
-    - name: Criar ZIP Kernel
+    - name: Criar ZIP
       run: |
 
-
         cd anykernel
-
 
         zip -r9 \
           ../Kernel_Otimizado_Dubai_KSU.zip \
