@@ -35,7 +35,7 @@ jobs:
         cd $GITHUB_WORKSPACE
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
-        - name: Iniciar a Compilação do Kernel com Otimizações Customizadas
+    - name: Iniciar a Compilação do Kernel com Otimizações Customizadas
       run: |
         cd $GITHUB_WORKSPACE
         
@@ -135,7 +135,6 @@ jobs:
           LLVM_IAS=1 \
           HOSTLDFLAGS="-fuse-ld=lld" \
           -j$(nproc)
-
 
     - name: Fazer o Upload do Kernel Otimizado Pronto
       uses: actions/upload-artifact@v4
