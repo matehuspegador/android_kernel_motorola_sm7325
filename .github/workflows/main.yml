@@ -1,4 +1,4 @@
-name: Build sm7325 Kernel 5.4 (Otimizado FPS + Adreno 640L)
+name: Build sm7325 Kernel 5.4 (FPS + KernelSU)
 
 on:
   workflow_dispatch:
@@ -11,6 +11,13 @@ on:
         description: "Codinome do dispositivo"
         required: true
         default: "dubai"
+      kernelsu_variant:
+        description: "KernelSU Variant"
+        type: choice
+        options:
+          - "tiann/KernelSU (oficial)"
+          - "KernelSU-Next (fork da comunidade)"
+        default: "tiann/KernelSU (oficial)"
 
 env:
   KERNEL_REPO: https://github.com/LineageOS/android_kernel_motorola_sm7325.git
@@ -52,10 +59,8 @@ jobs:
         run: |
           mkdir -p clang
           curl -L --progress-bar -o clang.tar.zst "$CLANG_URL"
-          echo "Extraindo Clang..."
           tar --use-compress-program=zstd -xf clang.tar.zst -C clang
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-          echo "Toolchain pronta!"
 
       - name: Aplicar patches (pasta patches/)
         run: |
@@ -63,23 +68,31 @@ jobs:
           git config user.email "ci@localhost"
           git config user.name "CI Bot"
           
-          echo "=== Patches encontrados ==="
-          ls -la ../patches/ 2>/dev/null || echo "Nenhum patch encontrado"
-          
           if [ -d "../patches" ] && [ "$(ls ../patches/*.patch 2>/dev/null)" ]; then
             for p in $(ls ../patches/*.patch | sort); do
               echo "Aplicando: $(basename $p)"
               if git am --3way "$p" 2>/dev/null; then
-                echo "   ✅ Sucesso (git am)"
+                echo "   ✅ Sucesso"
               elif git apply --ignore-whitespace --reject --whitespace=fix "$p" 2>/dev/null; then
-                echo "   ✅ Sucesso (git apply)"
+                echo "   ✅ Sucesso (apply)"
               else
                 echo "   ⚠️ Falhou (continuando)"
               fi
             done
           fi
 
-      - name: Defconfig + Tuning
+      - name: Integrar KernelSU
+        run: |
+          cd "$KERNEL_DIR"
+          if [ "${{ github.event.inputs.kernelsu_variant }}" = "KernelSU-Next (fork da comunidade)" ]; then
+            echo "Instalando KernelSU-Next..."
+            curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -s --
+          else
+            echo "Instalando KernelSU oficial..."
+            curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s --
+          fi
+
+      - name: Configurar kernel + Otimizações
         run: |
           cd "$KERNEL_DIR"
           make O=../$OUT_DIR ARCH=arm64 \
@@ -87,19 +100,22 @@ jobs:
             vendor/lineage_moto-lahaina.config \
             vendor/lineage_dubai.config
 
-      - name: Aplicar otimizações extras
-        run: |
-          cd "$KERNEL_DIR"
-          CFG="./scripts/config --file ../$OUT_DIR/.config"
-          $CFG -e CONFIG_CPU_FREQ_GOV_SCHEDUTIL -e CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL
-          $CFG -e CONFIG_HZ_300
-          $CFG -e CONFIG_ZRAM -e CONFIG_ZRAM_DEF_COMP_LZ4
-          $CFG -e CONFIG_TRANSPARENT_HUGEPAGE
-          $CFG -e CONFIG_IOSCHED_BFQ
-          $CFG -d CONFIG_DEBUG_KERNEL -d CONFIG_FTRACE
-          $CFG -e CONFIG_DRM_MSM_ADRENO_6XX -e CONFIG_MSM_ADRENO_BOOST
-          $CFG -e CONFIG_QCOM_RPMPD -e CONFIG_QCOM_TSENS
-          $CFG -e CONFIG_OVERLAY_FS -e CONFIG_MODULES
+          # Tuning + KernelSU
+          ./scripts/config --file ../$OUT_DIR/.config \
+            -e CONFIG_KSU \
+            -e CONFIG_KPROBES \
+            -e CONFIG_HAVE_KPROBES \
+            -e CONFIG_KPROBE_EVENTS \
+            -e CONFIG_CPU_FREQ_GOV_SCHEDUTIL \
+            -e CONFIG_HZ_300 \
+            -e CONFIG_ZRAM \
+            -e CONFIG_ZRAM_DEF_COMP_LZ4 \
+            -e CONFIG_TRANSPARENT_HUGEPAGE \
+            -e CONFIG_IOSCHED_BFQ \
+            -e CONFIG_DRM_MSM_ADRENO_6XX \
+            -e CONFIG_MSM_ADRENO_BOOST \
+            -d CONFIG_DEBUG_KERNEL \
+            -d CONFIG_FTRACE
 
       - name: Compilar Kernel
         run: |
@@ -114,7 +130,7 @@ jobs:
             KCFLAGS="-O3 -flto=thin -fomit-frame-pointer" \
             2>&1 | tee build.log
 
-      - name: Verificar e Empacotar
+      - name: Empacotar AnyKernel3
         run: |
           IMG=$(find $OUT_DIR -name "Image*" | head -n1)
           if [ -z "$IMG" ]; then
@@ -126,12 +142,13 @@ jobs:
           git clone --depth=1 $ANYKERNEL_REPO anykernel
           cp $IMG anykernel/
           find $OUT_DIR -name "*.dtb" -exec cp {} anykernel/ \;
+          
           cd anykernel
-          zip -r9 "../dubai-kernel-5.4-fps-$(date +%Y%m%d-%H%M).zip" . -x ".git*"
+          zip -r9 "../dubai-kernel-5.4-fps-ksu-$(date +%Y%m%d-%H%M).zip" . -x ".git*"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-dubai-5.4-fps
+          name: kernel-dubai-5.4-fps-ksu
           path: "*.zip"
           retention-days: 14
