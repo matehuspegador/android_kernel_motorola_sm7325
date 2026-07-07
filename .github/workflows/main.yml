@@ -55,29 +55,23 @@ jobs:
       - name: Clonar kernel
         run: git clone --depth=1 -b "${{ github.event.inputs.kernel_branch }}" "$KERNEL_REPO" "$KERNEL_DIR"
 
-      - name: Baixar Neutron Clang para Kernel 5.4
+      - name: Baixar Toolchain Clang (Link Direto e Estável)
         run: |
           mkdir -p clang
-
-          echo "Baixando Neutron Clang..."
-
-          curl -L --progress-bar \
-            -o neutron-clang.tar.zst \
-            "$CLANG_URL"
-
-          echo "Verificando arquivo..."
-          file neutron-clang.tar.zst
-
+          
+          echo "Baixando Clang estável para kernel 5.4..."
+          curl -L --progress-bar -o clang.tar.gz \
+            "https://github.com/LineageOS/android_prebuilts_clang_host_linux-x86_clang-r383902/releases/download/14.0.6/clang-14.0.6.tar.gz"
+          
+          echo "Verificando tamanho do arquivo..."
+          ls -lh clang.tar.gz
+          
           echo "Extraindo..."
-
-          tar --zstd -xf neutron-clang.tar.zst \
-            -C clang \
-            --strip-components=1
-
+          tar -xzf clang.tar.gz -C clang
+          
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-
-          echo "Testando Clang..."
-          clang --version
+          echo "✅ Clang configurado com sucesso!"
+          ls -la clang/bin/ | grep -E "clang$|aarch64-linux-gnu-" | head -n 5
 
       - name: Aplicar patches (pasta patches/)
         run: |
