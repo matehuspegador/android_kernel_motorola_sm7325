@@ -1,0 +1,17 @@
+diff --git a/arch/arm64/configs/vendor/lahaina-qgki_defconfig b/arch/arm64/configs/vendor/lahaina-qgki_defconfig
+index 0000000..2222222 100644
+--- a/arch/arm64/configs/vendor/lahaina-qgki_defconfig
++++ b/arch/arm64/configs/vendor/lahaina-qgki_defconfig
+@@ -30,10 +30,15 @@
+ CONFIG_DRM_MSM=y
+ CONFIG_DRM_MSM_ADRENO=y
+ CONFIG_DRM_MSM_ADRENO_6XX=y
++CONFIG_DRM_MSM_ADRENO_640=y
+ CONFIG_MSM_ADRENO_GOVERNOR=y
+
+ # GPU Performance
++CONFIG_MSM_ADRENO_DEFAULT_GOVERNOR="performance"
++CONFIG_MSM_ADRENO_BOOST=y
+ CONFIG_KGSL=y
++CONFIG_KGSL_PERFMON=y
++CONFIG_KGSL_LOW_LATENCY=y
