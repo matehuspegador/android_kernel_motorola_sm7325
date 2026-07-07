@@ -121,11 +121,16 @@ jobs:
 
         export PATH="$GITHUB_WORKSPACE/proton-clang/bin:$PATH"
 
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export CROSS_COMPILE=aarch64-linux-gnu-
+
 
         mkdir -p out
 
 
         ARCH=arm64 \
+        CROSS_COMPILE=aarch64-linux-gnu- \
         scripts/kconfig/merge_config.sh \
           -m \
           -O out \
@@ -134,18 +139,30 @@ jobs:
           arch/arm64/configs/vendor/dubai_optimizations.config
 
 
-        make O=out olddefconfig
+        make \
+          O=out \
+          ARCH=arm64 \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          olddefconfig
 
 
 
     - name: Compilar Kernel
       run: |
+    - name: Compilar Kernel
+      run: |
 
         export PATH="$GITHUB_WORKSPACE/proton-clang/bin:$PATH"
+
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export CROSS_COMPILE=aarch64-linux-gnu-
 
 
         make -j$(nproc) \
           O=out \
+          ARCH=arm64 \
+          SUBARCH=arm64 \
           CC=clang \
           LD=ld.lld \
           AR=llvm-ar \
