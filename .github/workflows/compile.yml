@@ -140,22 +140,25 @@ jobs:
     - name: Empacotar no AnyKernel3 Automático
       run: |
         cd $GITHUB_WORKSPACE
-        # 1. Baixar a base oficial do AnyKernel3
+        
+        # 1. Instalar a ferramenta oficial de criação de DTBO do Android no Ubuntu hospedeiro
+        sudo apt-get update && sudo apt-get install -y libufdt-dev-bin
+        
+        # 2. Baixar a base oficial do AnyKernel3
         git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
         
-        # 2. Copiar a Image gerada para a raiz do AnyKernel
+        # 3. Copiar a Image gerada para a raiz do AnyKernel
         cp out/arch/arm64/boot/Image anykernel/
         
-        # 3. Compilar os arquivos DTB para gerar o arquivo dtbo.img que faltava
-        # (Usa a ferramenta mkdtimg da própria árvore do kernel)
-        out/scripts/dtc/mkdtimg create anykernel/dtbo.img --page_size=4096 out/arch/arm64/boot/dts/vendor/qcom/*.dtbo
+        # 4. Criar o arquivo dtbo.img unificado usando a ferramenta nativa do sistema
+        mkdtimg create anykernel/dtbo.img --page_size=4096 out/arch/arm64/boot/dts/vendor/qcom/*.dtbo
         
-        # 4. Configurar o arquivo anykernel.sh automaticamente para o Edge 30
+        # 5. Configurar o arquivo anykernel.sh automaticamente para o Edge 30 (dubai)
         sed -i 's/kernel.string=.*/kernel.string=Kernel Otimizado com KernelSU por matehuspegador/g' anykernel/anykernel.sh
         sed -i 's/device.name1=.*/device.name1=dubai/g' anykernel/anykernel.sh
         sed -i 's/is_slot_device=0/is_slot_device=1/g' anykernel/anykernel.sh
         
-        # 5. Entrar na pasta e criar o arquivo ZIP final pronto para o TWRP
+        # 6. Entrar na pasta e criar o arquivo ZIP final pronto para o TWRP/OrangeFox
         cd anykernel
         zip -r ../Kernel_Otimizado_Dubai_KSU.zip *
 
