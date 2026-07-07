@@ -143,9 +143,6 @@ jobs:
         'CONFIG_KSU=y' \
         'CONFIG_KSU_MANUAL_HOOK=y' \
         'CONFIG_OVERLAY_FS=y' \
-        'CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y' \
-        'CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES="dubai"' \
-        'CONFIG_BUILD_ARM64_DT_OVERLAY=y' \
         > arch/arm64/configs/vendor/dubai_optimizations.config
 
 
