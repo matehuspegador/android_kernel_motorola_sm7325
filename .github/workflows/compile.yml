@@ -33,7 +33,8 @@ jobs:
     - name: Configurar e Integrar o KernelSU
       run: |
         cd $GITHUB_WORKSPACE
-        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+        # Baixa o instalador do KernelSU injetando o argumento v0.9.5 para compatibilidade com Kernel 5.4
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
 
     - name: Iniciar a Compilação do Kernel com Otimizações Customizadas
       run: |
