@@ -1,172 +1,167 @@
 name: Compilar Kernel Motorola SM7325
 
 on:
-  workflow_dispatch: # Permite que você clique no botão para iniciar manualmente
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # Atualizado para evitar que o job fique preso na fila
+    runs-on: ubuntu-22.04
+
+    env:
+      ARCH: arm64
+      SUBARCH: arm64
+      CLANG_TRIPLE: aarch64-linux-gnu-
 
     steps:
-    - name: Baixar o Código do Kernel
-      uses: actions/checkout@v4
-      with:
-        submodules: 'recursive'
-        fetch-depth: 1
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
 
-    - name: Instalar Dependências de Compilação
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev xz-utils git ccache patchelf
+      - name: Instalar Dependências
+        run: |
+          sudo apt-get update
 
-    - name: Baixar o Proton Clang Oficial
-      run: |
-        cd $GITHUB_WORKSPACE
-        git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
+          sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            flex \
+            git \
+            ccache \
+            patchelf \
+            libssl-dev \
+            libelf-dev \
+            xz-utils \
+            zip \
+            python3 \
+            wget
 
-    - name: Corrigir Compatibilidade do Linker (RELR)
-      run: |
-        cd $GITHUB_WORKSPACE
-        # Remove a dependência incompatível da libc local para evitar falhas no fixdep
-        find proton-clang/bin/ -name "ld" -exec patchelf --remove-needed "libc.so.6" {} \; 2>/dev/null || true
+      - name: Baixar Proton Clang
+        run: |
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
 
-    - name: Configurar e Integrar o KernelSU
-      run: |
-        cd $GITHUB_WORKSPACE
-        # Baixa o instalador do KernelSU injetando o argumento v0.9.5 para compatibilidade com Kernel 5.4
-        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
+      - name: Ajustar Linker
+        run: |
+          find proton-clang/bin \
+            -name ld \
+            -exec patchelf --remove-needed libc.so.6 {} \; \
+            2>/dev/null || true
 
-    - name: Iniciar a Compilação do Kernel com Otimizações Customizadas
-      run: |
-        cd $GITHUB_WORKSPACE
-        
-        # Configurar variáveis globais para o Proton Clang
-        export PATH="$GITHUB_WORKSPACE/proton-clang/bin:$PATH"
-        export ARCH=arm64
-        export SUBARCH=arm64
-        export CLANG_TRIPLE=aarch64-linux-gnu-
-        
-        # 1. Gerar a pasta out e mesclar as defconfigs da Motorola e Lineage
-        mkdir -p out
-        ARCH=arm64 scripts/kconfig/merge_config.sh -m -O out/ \
-          arch/arm64/configs/vendor/lahaina-qgki_defconfig \
-          arch/arm64/configs/vendor/lineage_dubai.config
-        
-        # 2. INJETAR SEU ARQUIVO COMPLETO DE OTIMIZAÇÕES
-        cat << 'EOF' >> out/.config
-        CONFIG_ARCH_MMAP_RND_BITS=24
-        CONFIG_ARM64_ERRATUM_1542419=y
-        CONFIG_ARM64_ERRATUM_1508412=y
-        CONFIG_ARM64_VA_BITS_39=y
-        CONFIG_SCHED_MC=y
-        CONFIG_SCHED_SMT=y
-        CONFIG_SCHED_WALT=y
-        CONFIG_UCLAMP_TASK=y
-        CONFIG_CFS_BANDWIDTH=y
-        CONFIG_HZ_300=y
-        CONFIG_PREEMPT=y
-        CONFIG_NO_HZ_FULL=y
-        CONFIG_CPU_FREQ=y
-        CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
-        CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
-        CONFIG_ARM_QCOM_CPUFREQ_HW=y
-        CONFIG_QCOM_CPUFREQ_NVMEM=y
-        CONFIG_PM_DEVFREQ=y
-        CONFIG_QCOM_DEVFREQ=y
-        CONFIG_MSM_ADRENO_TZ=y
-        CONFIG_QCOM_KGSL=y
-        CONFIG_ZRAM=y
-        CONFIG_LZ4_COMPRESS=y
-        CONFIG_SWAP=y
-        CONFIG_TRANSPARENT_HUGEPAGE=y
-        CONFIG_TMPFS_POSIX_ACL=y
-        CONFIG_TMPFS_XATTR=y
-        CONFIG_MQ_IOSCHED_DEADLINE=y
-        CONFIG_BLK_DEV_THROTTLING=y
-        CONFIG_TCP_CONG_BBR=y
-        CONFIG_NET_SCH_FQ=y
-        CONFIG_NET_SCH_FQ_CODEL=y
-        CONFIG_ANDROID=y
-        CONFIG_ANDROID_BINDER_IPC=y
-        CONFIG_ANDROID_BINDERFS=y
-        CONFIG_CLEANCACHE=y
-        CONFIG_FRONTSWAP=y
-        CONFIG_CMA=y
-        CONFIG_CMA_AREAS=7
-        CONFIG_PROCESS_RECLAIM=y
-        CONFIG_SCSI_UFS_QCOM=y
-        CONFIG_SCSI_UFSHCD_PLATFORM=y
-        CONFIG_BLOCK_COMPAT=y
-        CONFIG_FS_ENCRYPTION_INLINE_CRYPT=y
-        CONFIG_INLINE_CRYPT=y
-        CONFIG_SND_DYNAMIC_MINORS=y
-        CONFIG_SND_MAX_CARDS=32
-        CONFIG_NET_EMATCH=y
-        CONFIG_NET_CLS_ACT=y
-        CONFIG_NET_CLS_FLOWER=y
-        CONFIG_THERMAL_GOV_USER_SPACE=y
-        CONFIG_THERMAL_GOV_POWER_ALLOCATOR=y
-        CONFIG_SCHED_HRTICK=y
-        CONFIG_SECURITY_SELINUX_DEVELOP=y
-        CONFIG_CC_STACKPROTECTOR_NONE=y
-        CONFIG_COMPACTION=y
-        CONFIG_MIGRATION=y
-        CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y
-        CONFIG_KSU=y
-        CONFIG_OVERLAY_FS=y
-        CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES="dubai"
-        CONFIG_BUILD_ARM64_DT_OVERLAY=y
-        EOF
-        
-        # 3. Validar a árvore final corrigindo as dependências automaticamente usando o linker do host
-        make O=out HOSTLDFLAGS="-fuse-ld=lld" olddefconfig
-        
-        # 4. Compilação usando os binários do Proton Clang para o Kernel e o linker do host para os binários locais (fixdep)
-        make O=out \
-          CC=clang \
-          LD=ld.lld \
-          AR=llvm-ar \
-          NM=llvm-nm \
-          OBJCOPY=llvm-objcopy \
-          OBJDUMP=llvm-objdump \
-          STRIP=llvm-strip \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-          LLVM=1 \
-          LLVM_IAS=1 \
-          HOSTLDFLAGS="-fuse-ld=lld" \
-          -j$(nproc)
+      - name: Integrar KernelSU
+        run: |
+          curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s v0.9.5
 
-    - name: Empacotar no AnyKernel3 Automático
-      run: |
-        cd $GITHUB_WORKSPACE
-        
-        # 1. Baixar o binário oficial e atualizado do mkdtimg direto do Git do Google
-        wget https://android.googlesource.com/platform/prebuilts/misc/+/refs/heads/master/linux-x86/libufdt/mkdtimg?format=TEXT -O mkdtimg.base64
-        base64 -d mkdtimg.base64 > mkdtimg
-        chmod +x mkdtimg
-        
-        # 2. Baixar a base oficial do AnyKernel3
-        git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
-        
-        # 3. Copiar a Image gerada para a raiz do AnyKernel
-        cp out/arch/arm64/boot/Image anykernel/
-        
-        # 4. Criar o arquivo dtbo.img unificado usando o binário baixado
-        ./mkdtimg create anykernel/dtbo.img --page_size=4096 out/arch/arm64/boot/dts/vendor/qcom/*.dtbo
-        
-        # 5. Configurar o arquivo anykernel.sh automaticamente para o Edge 30 (dubai)
-        sed -i 's/kernel.string=.*/kernel.string=Kernel Otimizado com KernelSU por matehuspegador/g' anykernel/anykernel.sh
-        sed -i 's/device.name1=.*/device.name1=dubai/g' anykernel/anykernel.sh
-        sed -i 's/is_slot_device=0/is_slot_device=1/g' anykernel/anykernel.sh
-        
-        # 6. Entrar na pasta e criar o arquivo ZIP final pronto para o TWRP/OrangeFox
-        cd anykernel
-        zip -r ../Kernel_Otimizado_Dubai_KSU.zip *
+      - name: Criar Config Fragment
+        run: |
+          mkdir -p arch/arm64/configs/vendor
 
-    - name: Fazer o Upload do ZIP Instalável
-      uses: actions/upload-artifact@v4
-      with:
-        name: Motorola-Edge30-Kernel-Instalavel
-        path: Kernel_Otimizado_Dubai_KSU.zip
+          cat > arch/arm64/configs/vendor/dubai_optimizations.config <<EOF
+          CONFIG_ARCH_MMAP_RND_BITS=24
+          CONFIG_ARM64_ERRATUM_1542419=y
+          CONFIG_ARM64_ERRATUM_1508412=y
+          CONFIG_ARM64_VA_BITS_39=y
+          CONFIG_SCHED_MC=y
+          CONFIG_SCHED_SMT=y
+          CONFIG_SCHED_WALT=y
+          CONFIG_UCLAMP_TASK=y
+          CONFIG_CFS_BANDWIDTH=y
+          CONFIG_HZ_300=y
+          CONFIG_PREEMPT=y
+          CONFIG_NO_HZ_FULL=y
+          CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
+          CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+          CONFIG_ZRAM=y
+          CONFIG_LZ4_COMPRESS=y
+          CONFIG_SWAP=y
+          CONFIG_TRANSPARENT_HUGEPAGE=y
+          CONFIG_TMPFS_POSIX_ACL=y
+          CONFIG_TMPFS_XATTR=y
+          CONFIG_TCP_CONG_BBR=y
+          CONFIG_NET_SCH_FQ=y
+          CONFIG_NET_SCH_FQ_CODEL=y
+          CONFIG_PROCESS_RECLAIM=y
+          CONFIG_INLINE_CRYPT=y
+          CONFIG_FS_ENCRYPTION_INLINE_CRYPT=y
+          CONFIG_OVERLAY_FS=y
+          CONFIG_COMPACTION=y
+          CONFIG_MIGRATION=y
+          CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y
+          CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES="dubai"
+          CONFIG_BUILD_ARM64_DT_OVERLAY=y
+          EOF
 
+      - name: Gerar Configuração
+        run: |
+          export PATH=$GITHUB_WORKSPACE/proton-clang/bin:$PATH
+
+          mkdir -p out
+
+          ARCH=arm64 scripts/kconfig/merge_config.sh \
+            -m \
+            -O out \
+            arch/arm64/configs/vendor/lahaina-qgki_defconfig \
+            arch/arm64/configs/vendor/lineage_dubai.config \
+            arch/arm64/configs/vendor/dubai_optimizations.config
+
+          make O=out olddefconfig
+
+      - name: Compilar Kernel
+        run: |
+          export PATH=$GITHUB_WORKSPACE/proton-clang/bin:$PATH
+
+          make -j$(nproc) \
+            O=out \
+            CC=clang \
+            LD=ld.lld \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            HOSTLDFLAGS="-fuse-ld=lld" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+      - name: Baixar mkdtimg
+        run: |
+          wget https://android.googlesource.com/platform/system/libufdt/+/refs/heads/master/utils/src/mkdtimg.py?format=TEXT -O mkdtimg.base64
+          base64 -d mkdtimg.base64 > mkdtimg.py
+          chmod +x mkdtimg.py
+
+      - name: Empacotar AnyKernel3
+        run: |
+          cd $GITHUB_WORKSPACE
+
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
+
+          # Kernel puro
+          cp out/arch/arm64/boot/Image anykernel/Image
+
+          # Copiar DTBs para referência
+          mkdir -p anykernel/dts/vendor/qcom
+          cp out/arch/arm64/boot/dts/vendor/qcom/*.dtb \
+             anykernel/dts/vendor/qcom/ || true
+
+          # Gerar dtbo.img
+          DTBO=$(find out/arch/arm64/boot/dts/vendor/qcom -name "*.dtbo")
+
+          if [ -n "$DTBO" ]; then
+              ./mkdtimg create anykernel/dtbo.img \
+                  --page_size=4096 \
+                  $DTBO
+          fi
+
+          # Configurar AnyKernel
+          sed -i \
+          's/kernel.string=.*/kernel.string=Kernel Otimizado Dubai KSU/' \
+          anykernel/anykernel.sh
+
+          sed -i \
+          's/device.name1=.*/device.name1=dubai/' \
+          anykernel/anykernel.sh
+
+          sed -i \
+          's/IS_SLOT_DEVICE=.*/IS_SLOT_DEVICE=1/' \
+          anykernel/anykernel.sh
+
+          cd anykernel
+          zip -r9 ../Kernel_Otimizado_Dubai_KSU2.zip *
