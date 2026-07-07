@@ -3,285 +3,295 @@ name: Compilar Kernel Motorola SM7325
 on:
   workflow_dispatch:
 
+
 jobs:
   build:
+
     runs-on: ubuntu-22.04
 
-    env:
-      ARCH: arm64
-      SUBARCH: arm64
-      CLANG_TRIPLE: aarch64-linux-gnu-
 
     steps:
 
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 1
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 1
 
 
-      - name: Instalar Dependências
-        run: |
-          sudo apt-get update
+    - name: Instalar Dependências
+      run: |
+        sudo apt-get update
 
-          sudo apt-get install -y \
-            bc \
-            bison \
-            build-essential \
-            flex \
-            git \
-            ccache \
-            patchelf \
-            libssl-dev \
-            libelf-dev \
-            xz-utils \
-            zip \
-            python3 \
-            wget \
-            device-tree-compiler
-
-
-      - name: Baixar Proton Clang
-        run: |
-          git clone --depth=1 \
-            https://github.com/kdrag0n/proton-clang.git proton-clang
+        sudo apt-get install -y \
+          bc \
+          bison \
+          build-essential \
+          flex \
+          git \
+          ccache \
+          patchelf \
+          libssl-dev \
+          libelf-dev \
+          xz-utils \
+          zip \
+          python3 \
+          wget
 
 
-      - name: Ajustar Linker Proton Clang
-        run: |
-          find proton-clang/bin \
-            -name ld \
-            -exec patchelf --remove-needed libc.so.6 {} \; \
-            2>/dev/null || true
+    - name: Baixar Proton Clang
+      run: |
+        git clone --depth=1 \
+          https://github.com/kdrag0n/proton-clang.git \
+          proton-clang
 
 
-      - name: Integrar KernelSU
-        run: |
-          curl -LSs \
-          https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh \
-          | bash -s v0.9.5
+    - name: Ajustar Linker Proton Clang
+      run: |
+        find proton-clang/bin \
+          -name ld \
+          -exec patchelf --remove-needed libc.so.6 {} \; \
+          2>/dev/null || true
 
 
-      - name: Criar Fragment de Configuração Dubai
-        run: |
-
-          mkdir -p arch/arm64/configs/vendor
-
-
-          cat > arch/arm64/configs/vendor/dubai_optimizations.config <<EOF
-CONFIG_ARCH_MMAP_RND_BITS=24
-CONFIG_ARM64_ERRATUM_1542419=y
-CONFIG_ARM64_ERRATUM_1508412=y
-CONFIG_ARM64_VA_BITS_39=y
-
-CONFIG_SCHED_MC=y
-CONFIG_SCHED_SMT=y
-CONFIG_SCHED_WALT=y
-CONFIG_UCLAMP_TASK=y
-CONFIG_CFS_BANDWIDTH=y
-CONFIG_SCHED_HRTICK=y
-
-CONFIG_HZ_300=y
-CONFIG_PREEMPT=y
-CONFIG_NO_HZ_FULL=y
-
-CONFIG_CPU_FREQ=y
-CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
-CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
-CONFIG_ARM_QCOM_CPUFREQ_HW=y
-CONFIG_QCOM_CPUFREQ_NVMEM=y
-
-CONFIG_PM_DEVFREQ=y
-CONFIG_QCOM_DEVFREQ=y
-
-CONFIG_MSM_ADRENO_TZ=y
-CONFIG_QCOM_KGSL=y
-
-CONFIG_ZRAM=y
-CONFIG_LZ4_COMPRESS=y
-CONFIG_SWAP=y
-
-CONFIG_TRANSPARENT_HUGEPAGE=y
-
-CONFIG_TCP_CONG_BBR=y
-CONFIG_NET_SCH_FQ=y
-CONFIG_NET_SCH_FQ_CODEL=y
-
-CONFIG_PROCESS_RECLAIM=y
-CONFIG_COMPACTION=y
-CONFIG_MIGRATION=y
-
-CONFIG_INLINE_CRYPT=y
-CONFIG_FS_ENCRYPTION_INLINE_CRYPT=y
-
-CONFIG_OVERLAY_FS=y
-
-CONFIG_ANDROID=y
-CONFIG_ANDROID_BINDER_IPC=y
-CONFIG_ANDROID_BINDERFS=y
-
-CONFIG_SCSI_UFS_QCOM=y
-CONFIG_SCSI_UFSHCD_PLATFORM=y
-
-CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y
-CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES="dubai"
-CONFIG_BUILD_ARM64_DT_OVERLAY=y
-EOF
+    - name: Integrar KernelSU
+      run: |
+        curl -LSs \
+        https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh \
+        | bash -s v0.9.5
 
 
 
-      - name: Gerar Configuração Final
-        run: |
+    - name: Criar Config Fragment Dubai
+      run: |
 
-          export PATH=$GITHUB_WORKSPACE/proton-clang/bin:$PATH
-
-          mkdir -p out
+        mkdir -p arch/arm64/configs/vendor
 
 
-          ARCH=arm64 scripts/kconfig/merge_config.sh \
-            -m \
-            -O out \
-            arch/arm64/configs/vendor/lahaina-qgki_defconfig \
-            arch/arm64/configs/vendor/lineage_dubai.config \
-            arch/arm64/configs/vendor/dubai_optimizations.config
+        printf '%s\n' \
+        'CONFIG_ARCH_MMAP_RND_BITS=24' \
+        'CONFIG_ARM64_ERRATUM_1542419=y' \
+        'CONFIG_ARM64_ERRATUM_1508412=y' \
+        'CONFIG_ARM64_VA_BITS_39=y' \
+        'CONFIG_SCHED_MC=y' \
+        'CONFIG_SCHED_SMT=y' \
+        'CONFIG_SCHED_WALT=y' \
+        'CONFIG_UCLAMP_TASK=y' \
+        'CONFIG_CFS_BANDWIDTH=y' \
+        'CONFIG_HZ_300=y' \
+        'CONFIG_PREEMPT=y' \
+        'CONFIG_NO_HZ_FULL=y' \
+        'CONFIG_CPU_FREQ=y' \
+        'CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y' \
+        'CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y' \
+        'CONFIG_ARM_QCOM_CPUFREQ_HW=y' \
+        'CONFIG_QCOM_CPUFREQ_NVMEM=y' \
+        'CONFIG_PM_DEVFREQ=y' \
+        'CONFIG_QCOM_DEVFREQ=y' \
+        'CONFIG_MSM_ADRENO_TZ=y' \
+        'CONFIG_QCOM_KGSL=y' \
+        'CONFIG_ZRAM=y' \
+        'CONFIG_LZ4_COMPRESS=y' \
+        'CONFIG_SWAP=y' \
+        'CONFIG_TRANSPARENT_HUGEPAGE=y' \
+        'CONFIG_TMPFS_POSIX_ACL=y' \
+        'CONFIG_TMPFS_XATTR=y' \
+        'CONFIG_TCP_CONG_BBR=y' \
+        'CONFIG_NET_SCH_FQ=y' \
+        'CONFIG_NET_SCH_FQ_CODEL=y' \
+        'CONFIG_PROCESS_RECLAIM=y' \
+        'CONFIG_SCSI_UFS_QCOM=y' \
+        'CONFIG_SCSI_UFSHCD_PLATFORM=y' \
+        'CONFIG_INLINE_CRYPT=y' \
+        'CONFIG_FS_ENCRYPTION_INLINE_CRYPT=y' \
+        'CONFIG_OVERLAY_FS=y' \
+        'CONFIG_COMPACTION=y' \
+        'CONFIG_MIGRATION=y' \
+        'CONFIG_ANDROID_BINDER_IPC=y' \
+        'CONFIG_ANDROID_BINDERFS=y' \
+        'CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y' \
+        'CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES="dubai"' \
+        'CONFIG_BUILD_ARM64_DT_OVERLAY=y' \
+        > arch/arm64/configs/vendor/dubai_optimizations.config
 
 
-          make O=out olddefconfig
+
+    - name: Gerar Configuração Final
+      run: |
+
+        export PATH="$GITHUB_WORKSPACE/proton-clang/bin:$PATH"
+
+
+        mkdir -p out
+
+
+        ARCH=arm64 \
+        scripts/kconfig/merge_config.sh \
+          -m \
+          -O out \
+          arch/arm64/configs/vendor/lahaina-qgki_defconfig \
+          arch/arm64/configs/vendor/lineage_dubai.config \
+          arch/arm64/configs/vendor/dubai_optimizations.config
+
+
+        make O=out olddefconfig
 
 
 
-      - name: Compilar Kernel
-        run: |
+    - name: Compilar Kernel
+      run: |
 
-          export PATH=$GITHUB_WORKSPACE/proton-clang/bin:$PATH
-
-
-          make -j$(nproc) \
-            O=out \
-            CC=clang \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            HOSTLDFLAGS="-fuse-ld=lld" \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+        export PATH="$GITHUB_WORKSPACE/proton-clang/bin:$PATH"
 
 
-
-      - name: Verificar Saída Kernel
-        run: |
-
-          echo "Arquivos gerados:"
-          ls -lh out/arch/arm64/boot
-
-          echo "DTBO:"
-          find out/arch/arm64/boot -name "*.dtbo"
+        make -j$(nproc) \
+          O=out \
+          CC=clang \
+          LD=ld.lld \
+          AR=llvm-ar \
+          NM=llvm-nm \
+          OBJCOPY=llvm-objcopy \
+          OBJDUMP=llvm-objdump \
+          STRIP=llvm-strip \
+          LLVM=1 \
+          LLVM_IAS=1 \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
 
 
-      - name: Empacotar AnyKernel3
-        run: |
+    - name: Verificar Build
+      run: |
 
-          git clone --depth=1 \
-          https://github.com/osm0sis/AnyKernel3.git anykernel
+        echo "Arquivos boot:"
+
+        ls -lh out/arch/arm64/boot
 
 
-          # Kernel Image
-          cp out/arch/arm64/boot/Image \
+        echo "DTBO encontrados:"
+
+        find out/arch/arm64/boot \
+        -name "*.dtbo" || true
+
+
+
+
+    - name: Baixar AnyKernel3
+      run: |
+
+        git clone --depth=1 \
+          https://github.com/osm0sis/AnyKernel3.git \
+          anykernel
+
+
+
+    - name: Preparar Kernel AnyKernel
+      run: |
+
+
+        cp out/arch/arm64/boot/Image \
           anykernel/Image
 
 
 
-          # Copiar DTB apenas para referência
-          mkdir -p anykernel/dts/vendor/qcom
+        mkdir -p anykernel/dts/vendor/qcom
 
 
-          cp out/arch/arm64/boot/dts/vendor/qcom/*.dtb \
+
+        cp out/arch/arm64/boot/dts/vendor/qcom/*.dtb \
           anykernel/dts/vendor/qcom/ \
           2>/dev/null || true
 
 
 
-          # Criar dtbo.img
 
-          if [ -f "out/arch/arm64/boot/dtbo.img" ]; then
+        if [ -f out/arch/arm64/boot/dtbo.img ]; then
 
-              echo "Usando dtbo.img do kernel"
 
-              cp out/arch/arm64/boot/dtbo.img \
-              anykernel/dtbo.img
+          echo "Usando dtbo.img gerado pelo kernel"
+
+
+          cp out/arch/arm64/boot/dtbo.img \
+             anykernel/dtbo.img
+
+
+
+        else
+
+
+          DTBO=$(find out/arch/arm64/boot \
+          -name "*.dtbo")
+
+
+
+          if [ -n "$DTBO" ]; then
+
+
+            echo "Gerando dtbo.img"
+
+
+
+            mkdtimg create \
+              anykernel/dtbo.img \
+              --page_size=4096 \
+              $DTBO
+
 
 
           else
 
-              DTBO=$(find out/arch/arm64/boot \
-              -name "*.dtbo")
 
+            echo "Nenhum DTBO encontrado"
 
-              if [ -n "$DTBO" ]; then
-
-                  echo "Gerando dtbo.img"
-
-                  mkdtimg create \
-                  anykernel/dtbo.img \
-                  --page_size=4096 \
-                  $DTBO
-
-              else
-
-                  echo "Nenhum DTBO encontrado"
-
-              fi
 
           fi
 
 
-
-          # Configurar AnyKernel
-
-          sed -i \
-          's/kernel.string=.*/kernel.string=Kernel Otimizado Dubai KSU/' \
-          anykernel/anykernel.sh
-
-
-          sed -i \
-          's/device.name1=.*/device.name1=dubai/' \
-          anykernel/anykernel.sh
-
-
-          sed -i \
-          's/IS_SLOT_DEVICE=.*/IS_SLOT_DEVICE=1/' \
-          anykernel/anykernel.sh
-
-
-          sed -i \
-          's/do.modules=.*/do.modules=0/' \
-          anykernel/anykernel.sh
-
-
-          sed -i \
-          's/do.devicecheck=.*/do.devicecheck=1/' \
-          anykernel/anykernel.sh
+        fi
 
 
 
-          cd anykernel
 
 
-          zip -r9 \
+    - name: Configurar AnyKernel
+      run: |
+
+
+        sed -i \
+        's/kernel.string=.*/kernel.string=Kernel Otimizado Dubai KSU/' \
+        anykernel/anykernel.sh
+
+
+
+        sed -i \
+        's/device.name1=.*/device.name1=dubai/' \
+        anykernel/anykernel.sh
+
+
+
+        sed -i \
+        's/IS_SLOT_DEVICE=.*/IS_SLOT_DEVICE=1/' \
+        anykernel/anykernel.sh
+
+
+
+    - name: Criar ZIP Kernel
+      run: |
+
+
+        cd anykernel
+
+
+        zip -r9 \
           ../Kernel_Otimizado_Dubai_KSU.zip \
           *
 
 
 
-      - name: Upload Kernel ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: Motorola-Edge30-Dubai-KSU
-          path: Kernel_Otimizado_Dubai_KSU.zip
+    - name: Upload Kernel
+      uses: actions/upload-artifact@v4
+      with:
+
+        name: Motorola-Edge30-Dubai-KSU
+
+        path: Kernel_Otimizado_Dubai_KSU.zip
