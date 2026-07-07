@@ -21,6 +21,7 @@ jobs:
 
     - name: Instalar Dependências
       run: |
+
         sudo apt-get update
 
         sudo apt-get install -y \
@@ -36,18 +37,23 @@ jobs:
           xz-utils \
           zip \
           python3 \
-          wget
+          wget \
+          gcc-arm-linux-gnueabi
+
 
 
     - name: Baixar Proton Clang
       run: |
+
         git clone --depth=1 \
           https://github.com/kdrag0n/proton-clang.git \
           proton-clang
 
 
+
     - name: Ajustar Linker Proton Clang
       run: |
+
         find proton-clang/bin \
           -name ld \
           -exec patchelf --remove-needed libc.so.6 {} \; \
@@ -57,6 +63,7 @@ jobs:
 
     - name: Integrar KernelSU
       run: |
+
         curl -LSs \
         https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh \
         | bash -s v0.9.5
@@ -70,15 +77,14 @@ jobs:
 
 
         printf '%s\n' \
-        '# --- ARQUITETURA CRITICAL CORTEX (EDGE 30) ---' \
+        'CONFIG_ARCH_QCOM=y' \
+        'CONFIG_NET=y' \
         'CONFIG_ARCH_MMAP_RND_BITS=24' \
         'CONFIG_ARM64_ERRATUM_1542419=y' \
         'CONFIG_ARM64_ERRATUM_1508412=y' \
         'CONFIG_ARM64_VA_BITS_39=y' \
         'CONFIG_SCHED_MC=y' \
         'CONFIG_SCHED_SMT=y' \
-        '' \
-        '# --- REDUÇÃO DE SOBRECARGA (DEBLOAT) ---' \
         '# CONFIG_DEBUG_KERNEL is not set' \
         '# CONFIG_DEBUG_INFO is not set' \
         '# CONFIG_DEBUG_FS is not set' \
@@ -87,16 +93,12 @@ jobs:
         '# CONFIG_KPROBES is not set' \
         '# CONFIG_LATENCYTOP is not set' \
         '# CONFIG_PROFILING is not set' \
-        '' \
-        '# --- GERENCIAMENTO DE PROCESSOS E BATERIA ---' \
         'CONFIG_SCHED_WALT=y' \
         'CONFIG_UCLAMP_TASK=y' \
         'CONFIG_CFS_BANDWIDTH=y' \
         'CONFIG_HZ_300=y' \
         'CONFIG_PREEMPT=y' \
         'CONFIG_NO_HZ_FULL=y' \
-        '' \
-        '# --- CONTROLE DE FREQUÊNCIA CPU GPU ---' \
         'CONFIG_CPU_FREQ=y' \
         'CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y' \
         'CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y' \
@@ -106,8 +108,6 @@ jobs:
         'CONFIG_QCOM_DEVFREQ=y' \
         'CONFIG_MSM_ADRENO_TZ=y' \
         'CONFIG_QCOM_KGSL=y' \
-        '' \
-        '# --- MEMÓRIA E ARMAZENAMENTO ---' \
         'CONFIG_ZRAM=y' \
         'CONFIG_LZ4_COMPRESS=y' \
         'CONFIG_SWAP=y' \
@@ -116,74 +116,38 @@ jobs:
         'CONFIG_TMPFS_XATTR=y' \
         'CONFIG_MQ_IOSCHED_DEADLINE=y' \
         'CONFIG_BLK_DEV_THROTTLING=y' \
-        '' \
-        '# --- REDE ---' \
         'CONFIG_TCP_CONG_BBR=y' \
         'CONFIG_NET_SCH_FQ=y' \
         'CONFIG_NET_SCH_FQ_CODEL=y' \
-        '' \
-        '# --- ANDROID ---' \
         'CONFIG_ANDROID=y' \
         'CONFIG_ANDROID_BINDER_IPC=y' \
         'CONFIG_ANDROID_BINDERFS=y' \
-        '' \
-        '# --- VMM ---' \
         'CONFIG_CLEANCACHE=y' \
         'CONFIG_FRONTSWAP=y' \
         'CONFIG_CMA=y' \
         'CONFIG_CMA_AREAS=7' \
         'CONFIG_PROCESS_RECLAIM=y' \
-        '' \
-        '# --- UFS 3.1 ---' \
         'CONFIG_SCSI_UFS_QCOM=y' \
         'CONFIG_SCSI_UFSHCD_PLATFORM=y' \
         'CONFIG_BLOCK_COMPAT=y' \
         'CONFIG_FS_ENCRYPTION_INLINE_CRYPT=y' \
         'CONFIG_INLINE_CRYPT=y' \
-        '' \
-        '# --- AUDIO ---' \
-        '# CONFIG_AUDIT is not set' \
-        '# CONFIG_AUDITSYSCALL is not set' \
         'CONFIG_SND_DYNAMIC_MINORS=y' \
         'CONFIG_SND_MAX_CARDS=32' \
-        '' \
-        '# --- REDE GAMING ---' \
         'CONFIG_NET_EMATCH=y' \
         'CONFIG_NET_CLS_ACT=y' \
         'CONFIG_NET_CLS_FLOWER=y' \
-        '' \
-        '# --- THERMAL ---' \
         'CONFIG_THERMAL_GOV_USER_SPACE=y' \
         'CONFIG_THERMAL_GOV_POWER_ALLOCATOR=y' \
-        '' \
-        '# --- SCHEDULER ---' \
-        '# CONFIG_SCHED_AUTOGROUP is not set' \
         'CONFIG_SCHED_HRTICK=y' \
-        '# CONFIG_FAIR_GROUP_SCHED is not set' \
-        '# CONFIG_RT_GROUP_SCHED is not set' \
-        '# CONFIG_SCHED_CORE is not set' \
-        '' \
-        '# --- SEGURANÇA ---' \
         'CONFIG_SECURITY_SELINUX_DEVELOP=y' \
-        '# CONFIG_RANDOMIZE_BASE is not set' \
-        '# CONFIG_STACKPROTECTOR is not set' \
-        '# CONFIG_STACKPROTECTOR_STRONG is not set' \
         'CONFIG_CC_STACKPROTECTOR_NONE=y' \
-        '' \
-        '# --- MEMÓRIA VIRTUAL ---' \
         'CONFIG_COMPACTION=y' \
         'CONFIG_MIGRATION=y' \
-        '# CONFIG_BOUNCE is not set' \
-        '# CONFIG_KSM is not set' \
-        '' \
-        '# --- GPU DISPLAY ---' \
-        '# CONFIG_DRM_FBDEV_EMULATION is not set' \
-        '# CONFIG_FB is not set' \
-        '' \
-        '# --- KERNELSU ---' \
-        'CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y' \
         'CONFIG_KSU=y' \
+        'CONFIG_KSU_MANUAL_HOOK=y' \
         'CONFIG_OVERLAY_FS=y' \
+        'CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y' \
         'CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES="dubai"' \
         'CONFIG_BUILD_ARM64_DT_OVERLAY=y' \
         > arch/arm64/configs/vendor/dubai_optimizations.config
@@ -333,6 +297,171 @@ jobs:
               $DTBO
 
 
+    - name: Gerar Configuração Final
+      run: |
+
+        export PATH="$GITHUB_WORKSPACE/proton-clang/bin:$PATH"
+
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export CROSS_COMPILE=aarch64-linux-gnu-
+
+
+        mkdir -p out
+
+
+        ARCH=arm64 \
+        CROSS_COMPILE=aarch64-linux-gnu- \
+        scripts/kconfig/merge_config.sh \
+          -m \
+          -O out \
+          arch/arm64/configs/vendor/lahaina-qgki_defconfig \
+          arch/arm64/configs/vendor/lineage_dubai.config \
+          arch/arm64/configs/vendor/dubai_optimizations.config
+
+
+        make \
+          O=out \
+          ARCH=arm64 \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          olddefconfig
+
+
+        echo "===== CONFIG FINAL ====="
+
+        grep -E \
+        "CONFIG_KSU|CONFIG_SCHED_WALT|CONFIG_CPU_FREQ_GOV_SCHEDUTIL|CONFIG_ZRAM|CONFIG_OVERLAY_FS" \
+        out/.config || true
+
+
+
+    - name: Compilar Kernel
+      run: |
+
+        export PATH="$GITHUB_WORKSPACE/proton-clang/bin:$PATH"
+
+        export ARCH=arm64
+        export SUBARCH=arm64
+
+
+        make -j$(nproc) \
+          O=out \
+          ARCH=arm64 \
+          SUBARCH=arm64 \
+          CC=clang \
+          LD=ld.lld \
+          AR=llvm-ar \
+          NM=llvm-nm \
+          OBJCOPY=llvm-objcopy \
+          OBJDUMP=llvm-objdump \
+          STRIP=llvm-strip \
+          LLVM=1 \
+          LLVM_IAS=1 \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+
+
+    - name: Verificar Kernel Gerado
+      run: |
+
+        ls -lh out/arch/arm64/boot/Image
+
+        find out/arch/arm64/boot/dts/vendor/qcom \
+        -name "*.dtb" \
+        -o \
+        -name "*.dtbo"
+
+
+
+    - name: Compilar mkdtimg
+      run: |
+
+        git clone --depth=1 \
+        https://android.googlesource.com/platform/system/libufdt \
+        libufdt
+
+
+        cd libufdt
+
+
+        make
+
+
+        cp mkdtimg \
+        ../mkdtimg
+
+
+        cd ..
+
+
+        chmod +x mkdtimg
+
+
+
+    - name: Baixar AnyKernel3
+      run: |
+
+        git clone --depth=1 \
+        https://github.com/osm0sis/AnyKernel3.git \
+        anykernel
+
+
+
+    - name: Preparar AnyKernel3
+      run: |
+
+        cp \
+        out/arch/arm64/boot/Image \
+        anykernel/Image
+
+
+
+        mkdir -p \
+        anykernel/dts/vendor/qcom
+
+
+
+        cp \
+        out/arch/arm64/boot/dts/vendor/qcom/*.dtb \
+        anykernel/dts/vendor/qcom/ \
+        2>/dev/null || true
+
+
+
+        if [ -f out/arch/arm64/boot/dtbo.img ]; then
+
+
+          echo "Usando dtbo.img do kernel"
+
+
+          cp \
+          out/arch/arm64/boot/dtbo.img \
+          anykernel/dtbo.img
+
+
+
+        else
+
+
+          DTBO=$(find \
+          out/arch/arm64/boot \
+          -name "*.dtbo")
+
+
+
+          if [ -n "$DTBO" ]; then
+
+
+            echo "Criando dtbo.img"
+
+
+            $GITHUB_WORKSPACE/mkdtimg \
+            create \
+            anykernel/dtbo.img \
+            --page_size=4096 \
+            $DTBO
+
 
           else
 
@@ -347,7 +476,6 @@ jobs:
 
 
 
-
     - name: Configurar AnyKernel
       run: |
 
@@ -357,9 +485,11 @@ jobs:
         anykernel/anykernel.sh
 
 
+
         sed -i \
         's/device.name1=.*/device.name1=dubai/' \
         anykernel/anykernel.sh
+
 
 
         sed -i \
@@ -368,19 +498,21 @@ jobs:
 
 
 
-    - name: Criar ZIP
+    - name: Criar ZIP Kernel
       run: |
 
         cd anykernel
 
+
         zip -r9 \
-          ../Kernel_Otimizado_Dubai_KSU.zip \
-          *
+        ../Kernel_Otimizado_Dubai_KSU.zip \
+        .
 
 
 
-    - name: Upload Kernel
+    - name: Upload Kernel Final
       uses: actions/upload-artifact@v4
+
       with:
 
         name: Motorola-Edge30-Dubai-KSU
