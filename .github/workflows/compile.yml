@@ -137,12 +137,30 @@ jobs:
           HOSTLDFLAGS="-fuse-ld=lld" \
           -j$(nproc)
 
-    - name: Fazer o Upload do Kernel Otimizado Pronto
+    - name: Empacotar no AnyKernel3 Automático
+      run: |
+        cd $GITHUB_WORKSPACE
+        # 1. Baixar a base oficial do AnyKernel3
+        git clone --depth=1 https://github.com anykernel
+        
+        # 2. Copiar a Image gerada para a raiz do AnyKernel
+        cp out/arch/arm64/boot/Image anykernel/
+        
+        # 3. Compilar os arquivos DTB para gerar o arquivo dtbo.img que faltava
+        # (Usa a ferramenta mkdtimg da própria árvore do kernel)
+        out/scripts/dtc/mkdtimg create anykernel/dtbo.img --page_size=4096 out/arch/arm64/boot/dts/vendor/qcom/*.dtbo
+        
+        # 4. Configurar o arquivo anykernel.sh automaticamente para o Edge 30
+        sed -i 's/kernel.string=.*/kernel.string=Kernel Otimizado com KernelSU por matehuspegador/g' anykernel/anykernel.sh
+        sed -i 's/device.name1=.*/device.name1=dubai/g' anykernel/anykernel.sh
+        sed -i 's/is_slot_device=0/is_slot_device=1/g' anykernel/anykernel.sh
+        
+        # 5. Entrar na pasta e criar o arquivo ZIP final pronto para o TWRP
+        cd anykernel
+        zip -r ../Kernel_Otimizado_Dubai_KSU.zip *
+
+    - name: Fazer o Upload do ZIP Instalável
       uses: actions/upload-artifact@v4
       with:
-        name: Motorola-Edge30-Kernel-Otimizado
-        path: |
-          out/arch/arm64/boot/Image
-          out/arch/arm64/boot/dtbo.img
-          out/arch/arm64/boot/dts/vendor/qcom/*.dtb
-          
+        name: Motorola-Edge30-Kernel-Instalavel
+        path: Kernel_Otimizado_Dubai_KSU.zip
