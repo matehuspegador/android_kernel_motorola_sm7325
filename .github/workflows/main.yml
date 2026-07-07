@@ -55,20 +55,20 @@ jobs:
       - name: Clonar kernel
         run: git clone --depth=1 -b "${{ github.event.inputs.kernel_branch }}" "$KERNEL_REPO" "$KERNEL_DIR"
 
-      - name: Baixar Toolchain Clang (AOSP Estável)
+      - name: Baixar Toolchain Clang (Método Funcionando)
         run: |
           mkdir -p clang
           
-          echo "Baixando Clang AOSP (compatível com kernel 5.4)..."
+          echo "Baixando Clang estável para kernel 5.4..."
           curl -L --progress-bar -o clang.tar.gz \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r450784e.tar.gz"
+            "https://github.com/LineageOS/android_prebuilts_clang_host_linux-x86_clang-r383902/releases/download/14.0.6/clang-14.0.6.tar.gz"
           
           echo "Extraindo..."
           tar -xzf clang.tar.gz -C clang
           
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-          echo "✅ Clang configurado com sucesso!"
-          ls -la clang/bin/clang* | head -n 3
+          echo "✅ Clang configurado!"
+          ls -la clang/bin/ | grep -E "clang$|aarch64" | head -n 5
 
       - name: Aplicar patches (pasta patches/)
         run: |
