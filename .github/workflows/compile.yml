@@ -141,8 +141,10 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE
         
-        # 1. Instalar a ferramenta oficial de criação de DTBO do Android no Ubuntu hospedeiro
-        sudo apt-get update && sudo apt-get install -y libufdt-dev-bin
+        # 1. Baixar o binário oficial e atualizado do mkdtimg direto do Git do Google
+        wget https://android.googlesource.com/platform/prebuilts/misc/+/refs/heads/master/linux-x86/libufdt/mkdtimg?format=TEXT -O mkdtimg.base64
+        base64 -d mkdtimg.base64 > mkdtimg
+        chmod +x mkdtimg
         
         # 2. Baixar a base oficial do AnyKernel3
         git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
@@ -150,8 +152,8 @@ jobs:
         # 3. Copiar a Image gerada para a raiz do AnyKernel
         cp out/arch/arm64/boot/Image anykernel/
         
-        # 4. Criar o arquivo dtbo.img unificado usando a ferramenta nativa do sistema
-        mkdtimg create anykernel/dtbo.img --page_size=4096 out/arch/arm64/boot/dts/vendor/qcom/*.dtbo
+        # 4. Criar o arquivo dtbo.img unificado usando o binário baixado
+        ./mkdtimg create anykernel/dtbo.img --page_size=4096 out/arch/arm64/boot/dts/vendor/qcom/*.dtbo
         
         # 5. Configurar o arquivo anykernel.sh automaticamente para o Edge 30 (dubai)
         sed -i 's/kernel.string=.*/kernel.string=Kernel Otimizado com KernelSU por matehuspegador/g' anykernel/anykernel.sh
@@ -167,3 +169,4 @@ jobs:
       with:
         name: Motorola-Edge30-Kernel-Instalavel
         path: Kernel_Otimizado_Dubai_KSU.zip
+
