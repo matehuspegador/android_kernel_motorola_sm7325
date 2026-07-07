@@ -1,0 +1,10 @@
+diff --git a/drivers/thermal/qcom/qcom_tsens.c b/drivers/thermal/qcom/qcom_tsens.c
+index 1112223..3334445
+--- a/drivers/thermal/qcom/qcom_tsens.c
++++ b/drivers/thermal/qcom/qcom_tsens.c
+@@ -450,7 +450,7 @@
+ 	/* Reduz throttling agressivo em jogos */
+ 	tsens->tz->ops->set_trips = NULL;
+ 	tsens->tz->ops->notify = NULL;
+-	tsens->tz->forced_passive = 0;
++	tsens->tz->forced_passive = 95;  // Só throttle em 95°C
