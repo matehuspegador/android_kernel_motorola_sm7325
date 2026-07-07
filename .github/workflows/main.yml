@@ -54,20 +54,16 @@ jobs:
       - name: Clonar kernel
         run: git clone --depth=1 -b "${{ github.event.inputs.kernel_branch }}" "$KERNEL_REPO" "$KERNEL_DIR"
 
-      - name: Baixar Toolchain Clang (Versão Funcionando)
+      - name: Baixar Toolchain Clang
         run: |
           mkdir -p clang
-          
-          echo "Baixando Clang 14.0 (compatível com kernel 5.4)..."
           curl -L --progress-bar -o clang.tar.gz \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r450784e.tar.gz"
-          
-          echo "Extraindo..."
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android13-release/clang-r450784e.tar.gz"
           tar -xzf clang.tar.gz -C clang
-          
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
           echo "✅ Clang configurado!"
-          ls -la clang/bin/clang* | head -n 3
+          ls clang/bin/clang* | head -n 3
+          
       - name: Aplicar patches (pasta patches/)
         run: |
           cd "$KERNEL_DIR"
@@ -127,13 +123,15 @@ jobs:
           cd "$KERNEL_DIR"
           make O=../$OUT_DIR ARCH=arm64 olddefconfig
           
-          echo "Iniciando compilação (pode demorar)..."
+          echo "Iniciando compilação (com flags compatíveis)..."
           make -j$(nproc) O=../$OUT_DIR ARCH=arm64 \
-            CC="ccache clang" LLVM=1 LLVM_IAS=1 \
+            CC="ccache clang" \
+            LLVM=1 \
+            LLVM_IAS=0 \   # <--- Importante: desabilitado
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            KCFLAGS="-O2 -flto=thin" \
+            KCFLAGS="-O2" \
             2>&1 | tee build.log
             
       - name: Empacotar AnyKernel3
