@@ -214,33 +214,21 @@ jobs:
 
 
 
-    - name: Compilar mkdtimg
+    - name: Baixar mkdtimg
       run: |
 
-        git clone --depth=1 \
-          https://android.googlesource.com/platform/system/libufdt \
-          libufdt
+        wget \
+          https://android.googlesource.com/platform/prebuilts/misc/+/refs/heads/master/linux-x86/libufdt/mkdtimg?format=TEXT \
+          -O mkdtimg.base64
 
 
-        cd libufdt
-
-
-        make \
-          HOST_OS=linux \
-          HOST_ARCH=x86_64
-
-
-        find . -name mkdtimg -type f
-
-
-        cp $(find . -name mkdtimg -type f | head -n1) \
-          ../mkdtimg
-
-
-        cd ..
+        base64 -d mkdtimg.base64 > mkdtimg
 
 
         chmod +x mkdtimg
+
+
+        ./mkdtimg --help || true
 
 
     - name: Baixar AnyKernel3
