@@ -1,0 +1,16 @@
+diff --git a/drivers/gpu/drm/msm/adreno/adreno_device.c b/drivers/gpu/drm/msm/adreno/adreno_device.c
+index 1234567..890abcd
+--- a/drivers/gpu/drm/msm/adreno/adreno_device.c
++++ b/drivers/gpu/drm/msm/adreno/adreno_device.c
+@@ -120,8 +120,8 @@
+ 	.idle_timeout = 1000,          // Reduzido para FPS mais estável
+ 	.min_freq = 180000000,         // Aumenta frequência mínima da GPU
+ 	.max_freq = 0,
++	.boost = 1,
+ };
+
+ /* Aumenta performance em jogos */
+ static struct adreno_device adreno_dev = {
+-	.gpu_pwrlevel = 0,
++	.gpu_pwrlevel = 4,   // Começa em nível mais alto
+ };
