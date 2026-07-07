@@ -38,7 +38,9 @@ jobs:
           zip \
           python3 \
           wget \
-          gcc-arm-linux-gnueabi
+          make \
+          ninja-build \
+          g++
 
 
 
@@ -212,7 +214,7 @@ jobs:
 
 
 
-    - name: Instalar mkdtimg
+    - name: Compilar mkdtimg
       run: |
 
         git clone --depth=1 \
@@ -223,18 +225,22 @@ jobs:
         cd libufdt
 
 
-        gcc \
-          utils/src/mkdtimg.c \
-          utils/src/util.c \
-          -Iinclude \
-          -o ../mkdtimg
+        make \
+          HOST_OS=linux \
+          HOST_ARCH=x86_64
+
+
+        find . -name mkdtimg -type f
+
+
+        cp $(find . -name mkdtimg -type f | head -n1) \
+          ../mkdtimg
 
 
         cd ..
 
 
         chmod +x mkdtimg
-
 
 
     - name: Baixar AnyKernel3
