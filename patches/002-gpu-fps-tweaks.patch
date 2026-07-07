@@ -1,16 +1,10 @@
-diff --git a/drivers/gpu/drm/msm/adreno/adreno_device.c b/drivers/gpu/drm/msm/adreno/adreno_device.c
-index 1234567..890abcd
---- a/drivers/gpu/drm/msm/adreno/adreno_device.c
-+++ b/drivers/gpu/drm/msm/adreno/adreno_device.c
-@@ -120,8 +120,8 @@
- 	.idle_timeout = 1000,          // Reduzido para FPS mais estável
- 	.min_freq = 180000000,         // Aumenta frequência mínima da GPU
- 	.max_freq = 0,
-+	.boost = 1,
- };
-
- /* Aumenta performance em jogos */
- static struct adreno_device adreno_dev = {
--	.gpu_pwrlevel = 0,
-+	.gpu_pwrlevel = 4,   // Começa em nível mais alto
- };
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 0000000..2222222 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -100,7 +100,7 @@
+  * Lower latency for gaming
+  */
+ unsigned int sysctl_sched_latency = 4;
+-int sched_boost = 1;
++int sched_boost = 2;   // Boost leve para jogos
