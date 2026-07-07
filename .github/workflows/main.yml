@@ -55,29 +55,32 @@ jobs:
       - name: Clonar kernel
         run: git clone --depth=1 -b "${{ github.event.inputs.kernel_branch }}" "$KERNEL_REPO" "$KERNEL_DIR"
 
-      - name: Baixar Toolchain Clang (Método Confiável)
+      - name: Baixar Toolchain Clang (Corrigido)
         run: |
           mkdir -p clang
           
-          echo "Baixando Neutron Clang (versão testada)..."
+          echo "Baixando Neutron Clang..."
           curl -L --progress-bar -o clang.tar.zst \
             "https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/20241012/neutron-clang-20241012.tar.zst"
           
-          echo "Extraindo..."
-          # Método 1: zstd direto
-          if tar --use-compress-program=zstd -xf clang.tar.zst -C clang; then
-            echo "✅ Extração bem-sucedida (método 1)"
+          echo "Extraindo arquivo..."
+          
+          # Método 1
+          if tar --use-compress-program=zstd -xf clang.tar.zst -C clang 2>/dev/null; then
+            echo "✅ Extraído com sucesso (método 1)"
           else
-            echo "Tentando método 2..."
-            apt-get install -y zstd
+            echo "Instalando zstd..."
+            sudo apt-get install -y zstd
+            
+            echo "Tentando extração método 2..."
             zstd -d clang.tar.zst -o clang.tar
             tar -xf clang.tar -C clang
-            echo "✅ Extração bem-sucedida (método 2)"
+            echo "✅ Extraído com sucesso (método 2)"
           fi
           
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-          echo "✅ Toolchain pronta!"
-          ls clang/bin/clang* | head -n 3
+          echo "✅ Toolchain Clang configurada!"
+          ls -la clang/bin/ | head -n 5
 
       - name: Aplicar patches (pasta patches/)
         run: |
