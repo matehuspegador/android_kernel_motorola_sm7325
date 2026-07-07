@@ -39,7 +39,9 @@ jobs:
           wget \
           make \
           ninja-build \
-          g++
+          g++ \
+          gcc-aarch64-linux-gnu \
+          gcc-arm-linux-gnueabi
 
 
     - name: Baixar Proton Clang
