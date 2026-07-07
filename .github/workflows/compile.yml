@@ -240,17 +240,14 @@ jobs:
 
 
 
-    - name: Preparar Kernel AnyKernel
+    - name: Preparar AnyKernel3
       run: |
-
 
         cp out/arch/arm64/boot/Image \
           anykernel/Image
 
 
-
         mkdir -p anykernel/dts/vendor/qcom
-
 
 
         cp out/arch/arm64/boot/dts/vendor/qcom/*.dtb \
@@ -261,25 +258,19 @@ jobs:
 
         if [ -f out/arch/arm64/boot/dtbo.img ]; then
 
-
           echo "Usando dtbo.img gerado pelo kernel"
-
 
           cp out/arch/arm64/boot/dtbo.img \
              anykernel/dtbo.img
 
 
-
         else
 
-
           DTBO=$(find out/arch/arm64/boot \
-          -name "*.dtbo")
-
+            -name "*.dtbo")
 
 
           if [ -n "$DTBO" ]; then
-
 
             echo "Gerando dtbo.img"
 
@@ -289,6 +280,15 @@ jobs:
               anykernel/dtbo.img \
               --page_size=4096 \
               $DTBO
+
+
+          else
+
+            echo "Nenhum arquivo .dtbo encontrado"
+
+          fi
+
+        fi
 
 
     - name: Gerar Configuração Final
