@@ -25,7 +25,6 @@ env:
   OUT_DIR: out
   ARCH: arm64
   ANYKERNEL_REPO: https://github.com/osm0sis/AnyKernel3.git
-  CLANG_URL: https://github.com/kdrag0n/proton-clang.git
 
 jobs:
   build:
@@ -55,23 +54,15 @@ jobs:
       - name: Clonar kernel
         run: git clone --depth=1 -b "${{ github.event.inputs.kernel_branch }}" "$KERNEL_REPO" "$KERNEL_DIR"
 
-      - name: Baixar Toolchain Clang (Link Direto e Estável)
+      - name: Baixar Proton Clang
         run: |
           mkdir -p clang
-          
-          echo "Baixando Clang estável para kernel 5.4..."
-          curl -L --progress-bar -o clang.tar.gz \
-            "https://github.com/kdrag0n/proton-clang.git" clang.tar.gz
-          
-          echo "Verificando tamanho do arquivo..."
-          ls -lh clang.tar.gz
-          
-          echo "Extraindo..."
-          tar -xzf clang.tar.gz -C clang
+          echo "Baixando Proton Clang (kdrag0n)..."
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
           
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-          echo "✅ Clang configurado com sucesso!"
-          ls -la clang/bin/ | grep -E "clang$|aarch64-linux-gnu-" | head -n 5
+          echo "✅ Proton Clang configurado!"
+          ls -la clang/bin/ | grep -E "clang$|aarch64" | head -n 5
 
       - name: Aplicar patches (pasta patches/)
         run: |
@@ -111,7 +102,6 @@ jobs:
             vendor/lineage_moto-lahaina.config \
             vendor/lineage_dubai.config
 
-          # Tuning + KernelSU
           ./scripts/config --file ../$OUT_DIR/.config \
             -e CONFIG_KSU \
             -e CONFIG_KPROBES \
