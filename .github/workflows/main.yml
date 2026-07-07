@@ -54,16 +54,20 @@ jobs:
       - name: Clonar kernel
         run: git clone --depth=1 -b "${{ github.event.inputs.kernel_branch }}" "$KERNEL_REPO" "$KERNEL_DIR"
 
-      - name: Baixar Proton Clang
+      - name: Baixar Toolchain Clang (Versão Funcionando)
         run: |
           mkdir -p clang
-          echo "Baixando Proton Clang (kdrag0n)..."
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
+          
+          echo "Baixando Clang 14.0 (compatível com kernel 5.4)..."
+          curl -L --progress-bar -o clang.tar.gz \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r450784e.tar.gz"
+          
+          echo "Extraindo..."
+          tar -xzf clang.tar.gz -C clang
           
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-          echo "✅ Proton Clang configurado!"
-          ls -la clang/bin/ | grep -E "clang$|aarch64" | head -n 5
-
+          echo "✅ Clang configurado!"
+          ls -la clang/bin/clang* | head -n 3
       - name: Aplicar patches (pasta patches/)
         run: |
           cd "$KERNEL_DIR"
