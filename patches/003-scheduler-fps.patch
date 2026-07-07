@@ -1,0 +1,13 @@
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 9876543..2109876
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -4567,7 +4567,7 @@
+  * Boost top-app tasks (jogos)
+  */
+ static int sched_boost = 1;
+-static unsigned int sysctl_sched_latency = 6;
++static unsigned int sysctl_sched_latency = 4;  // Menor latência = FPS melhor
+
+ /* Prefer idle CPUs para tarefas pesadas */
+ static int prefer_idle = 1;
