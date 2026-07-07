@@ -141,7 +141,7 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE
         # 1. Baixar a base oficial do AnyKernel3
-        git clone --depth=1 https://github.com anykernel
+        git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
         
         # 2. Copiar a Image gerada para a raiz do AnyKernel
         cp out/arch/arm64/boot/Image anykernel/
