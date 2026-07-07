@@ -123,14 +123,15 @@ jobs:
           cd "$KERNEL_DIR"
           make O=../$OUT_DIR ARCH=arm64 olddefconfig
           
+          echo "Iniciando compilação (pode demorar)..."
           make -j$(nproc) O=../$OUT_DIR ARCH=arm64 \
             CC="ccache clang" LLVM=1 LLVM_IAS=1 \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            KCFLAGS="-O3 -flto=thin -fomit-frame-pointer" \
+            KCFLAGS="-O2 -flto=thin" \
             2>&1 | tee build.log
-
+            
       - name: Empacotar AnyKernel3
         run: |
           IMG=$(find $OUT_DIR -name "Image*" | head -n1)
