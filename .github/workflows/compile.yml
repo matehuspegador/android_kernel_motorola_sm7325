@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04 # Executa na nuvem x86_64 pura do GitHub
+    runs-on: ubuntu-latest # Atualizado para evitar que o job fique preso na fila
 
     steps:
     - name: Baixar o Código do Kernel
@@ -17,12 +17,18 @@ jobs:
     - name: Instalar Dependências de Compilação
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev xz-utils git ccache
+        sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev xz-utils git ccache patchelf
 
     - name: Baixar o Proton Clang Oficial
       run: |
         cd $GITHUB_WORKSPACE
         git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
+
+    - name: Corrigir Compatibilidade do Linker (RELR)
+      run: |
+        cd $GITHUB_WORKSPACE
+        # Remove a dependência incompatível da libc local para evitar falhas no fixdep
+        find proton-clang/bin/ -name "ld" -exec patchelf --remove-needed "libc.so.6" {} \; 2>/dev/null || true
 
     - name: Configurar e Integrar o KernelSU
       run: |
@@ -106,6 +112,112 @@ jobs:
 
         # --- OTIMIZAÇÃO EXTREMA DE MEMÓRIA RAM (I/O & VMM) ---
         CONFIG_CLEANCACHE=y
+        CONFIG_FRONTSWAP=y
+        CONFIG_CMA=y
+        CONFIG_CMA_AREAS=7
+        CONFIG_PROCESS_RECLAIM=y
+
+        # --- ULTRA DESEMPENHO DE ARMAZENAMENTO (UFS 3.1) ---
+        CONFIG_SCSI_UFS_QCOM=y
+        CONFIG_SCSI_UFSHCD_PLATFORM=y
+        CONFIG_BLOCK_COMPAT=y
+        CONFIG_FS_ENCRYPTION_INLINE_CRYPT=y
+        CONFIG_INLINE_CRYPT=y
+
+        # --- LATÊNCIA ULTRA-BAIXA E ÁUDIO ---
+        # CONFIG_AUDIT is not set
+        # CONFIG_AUDITSYSCALL is not set
+        CONFIG_SND_DYNAMIC_MINORS=y
+        CONFIG_SND_MAX_CARDS=32
+
+        # --- REMOÇÃO AGRESSIVA DE TELEMETRIA E LOGS (DEBLOAT PARTE 2) ---
+        # CONFIG_SCHED_DEBUG is not set
+        # CONFIG_SLUB_DEBUG is not set
+        # CONFIG_OBJECT_LEAK_DETECTOR is not set
+        # CONFIG_FAULT_INJECTION is not set
+        # CONFIG_LOCKDEP is not set
+        # CONFIG_PROVE_LOCKING is not set
+        # CONFIG_STACKTRACE is not set
+        # CONFIG_IKCONFIG is not set
+        # CONFIG_PANIC_ON_OOPS is not set
+        # CONFIG_PRINTK_TIME is not set
+
+        # --- SUBSISTEMA DE REDE ADICIONAL PARA JOGOS ---
+        CONFIG_NET_EMATCH=y
+        CONFIG_NET_CLS_ACT=y
+        CONFIG_NET_CLS_FLOWER=y
+
+        # --- RESPOSTA DE TOUCH E THERMAL ---
+        CONFIG_THERMAL_GOV_USER_SPACE=y
+        CONFIG_THERMAL_GOV_POWER_ALLOCATOR=y
+
+        # --- OTIMIZAÇÃO EXTREMA DO AGENDADOR (SCHEDULER TWEAKS) ---
+        # CONFIG_SCHED_AUTOGROUP is not set
+        CONFIG_SCHED_HRTICK=y
+        # CONFIG_FAIR_GROUP_SCHED is not set
+        # CONFIG_RT_GROUP_SCHED is not set
+        # CONFIG_SCHED_CORE is not set
+
+        # --- BYPASS DE SEGURANÇA REDUNDANTE (REDUÇÃO DE LATÊNCIA DE CPU) ---
+        CONFIG_SECURITY_SELINUX_DEVELOP=y
+        # CONFIG_HARDEN_BRANCH_PREDICTOR is not set
+        # CONFIG_ARM64_SW_TTBR0_PAN is not set
+        # CONFIG_RANDOMIZE_BASE is not set
+        # CONFIG_STACKPROTECTOR is not set
+        # CONFIG_STACKPROTECTOR_STRONG is not set
+
+        # --- ELIMINAÇÃO TOTAL DE RASTREADORES E SUBSISTEMAS INÚTEIS ---
+        CONFIG_CC_STACKPROTECTOR_NONE=y
+        # CONFIG_KALLSYMS is not set
+        # CONFIG_KALLSYMS_ALL is not set
+        # CONFIG_ELF_CORE is not set
+        # CONFIG_CORE_DUMP_DEFAULT_ELF_HEADERS is not set
+        # CONFIG_CORESIGHT is not set
+
+        # --- OTIMIZAÇÃO DE MEMÓRIA VIRTUAL VMM AGRESSIVA ---
+        CONFIG_COMPACTION=y
+        CONFIG_MIGRATION=y
+        # CONFIG_BOUNCE is not set
+        # CONFIG_KSM is not set
+
+        # --- ACELERAÇÃO ADRENO GPU & DISPLAY ---
+        # CONFIG_DRM_FBDEV_EMULATION is not set
+        # CONFIG_FB is not set
+
+        # --- KERNELSU MANDATORY FLAGS ---
+        CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y
+        CONFIG_KSU=y
+        CONFIG_OVERLAY_FS=y
+        CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES="dubai"
+        CONFIG_BUILD_ARM64_DT_OVERLAY=y
+        EOF
+        
+        # 3. Validar a árvore final corrigindo as dependências automaticamente
+        make O=out olddefconfig
+        
+        # 4. Compilação usando os binários do Proton Clang nativos na nuvem x86_64
+        make O=out \
+          CC=clang \
+          LD=ld.lld \
+          AR=llvm-ar \
+          NM=llvm-nm \
+          OBJCOPY=llvm-objcopy \
+          OBJDUMP=llvm-objdump \
+          STRIP=llvm-strip \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+          LLVM=1 \
+          LLVM_IAS=1 \
+          -j$(nproc)
+
+    - name: Fazer o Upload do Kernel Otimizado Pronto
+      uses: actions/upload-artifact@v4
+      with:
+        name: Motorola-Edge30-Kernel-Otimizado
+        path: |
+          out/arch/arm64/boot/Image
+          out/arch/arm64/boot/dtbo.img
+          out/arch/arm64/boot/dts/vendor/qcom/*.dtb
         CONFIG_FRONTSWAP=y
         CONFIG_CMA=y
         CONFIG_CMA_AREAS=7
