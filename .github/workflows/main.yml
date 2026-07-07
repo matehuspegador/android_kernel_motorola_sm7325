@@ -74,10 +74,23 @@ jobs:
       - name: Baixar Toolchain Neutron Clang
         run: |
           mkdir -p clang
-          curl -L "${{ env.CLANG_URL }}" -o clang.tar.zst
-          tar --use-compress-program=unzstd -xf clang.tar.zst -C clang
+          
+          # Versão estável recomendada para kernel 5.4
+          CLANG_URL="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/20241012/neutron-clang-20241012.tar.zst"
+          
+          echo "Baixando Neutron Clang..."
+          curl -L --progress-bar -o clang.tar.zst "$CLANG_URL"
+          
+          echo "Extraindo (pode demorar)..."
+          tar --use-compress-program=zstd -xf clang.tar.zst -C clang || {
+            echo "Erro na extração. Tentando método alternativo..."
+            zstd -d clang.tar.zst -o clang.tar && tar -xf clang.tar -C clang
+          }
+          
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-
+          ls -la clang/bin/ | head -n 10
+          echo "✅ Toolchain Clang configurada com sucesso!"
+          
       - name: Aplicar patches da pasta patches/ (Melhorado)
         run: |
           cd "${{ env.KERNEL_DIR }}"
