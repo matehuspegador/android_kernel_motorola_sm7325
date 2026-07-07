@@ -1,0 +1,27 @@
+diff --git a/arch/arm64/configs/vendor/lahaina-qgki_defconfig b/arch/arm64/configs/vendor/lahaina-qgki_defconfig
+index abc1234..def5678 100644
+--- a/arch/arm64/configs/vendor/lahaina-qgki_defconfig
++++ b/arch/arm64/configs/vendor/lahaina-qgki_defconfig
+@@ -120,10 +120,15 @@
+ CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
+ CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+ CONFIG_HZ_300=y
++CONFIG_SCHED_TUNE=y
++CONFIG_UCLAMP_TASK=y
++CONFIG_UCLAMP_BUCKETS_COUNT=20
+
+ # Memory
+ CONFIG_ZRAM=y
++CONFIG_ZRAM_DEF_COMP_LZ4=y
+ CONFIG_TRANSPARENT_HUGEPAGE=y
++CONFIG_TRANSPARENT_HUGEPAGE_ALWAYS=y
+
+ # I/O
+ CONFIG_IOSCHED_BFQ=y
+ CONFIG_BFQ_GROUP_IOSCHED=y
+
+ # Disable heavy debug
+-CONFIG_DEBUG_KERNEL=y
+-CONFIG_FTRACE=y
++CONFIG_DEBUG_KERNEL=n
++CONFIG_FTRACE=n
