@@ -70,20 +70,33 @@ jobs:
 
 
         printf '%s\n' \
-        'CONFIG_ARCH_QCOM=y' \
-        'CONFIG_NET=y' \
+        '# --- ARQUITETURA CRITICAL CORTEX (EDGE 30) ---' \
         'CONFIG_ARCH_MMAP_RND_BITS=24' \
         'CONFIG_ARM64_ERRATUM_1542419=y' \
         'CONFIG_ARM64_ERRATUM_1508412=y' \
         'CONFIG_ARM64_VA_BITS_39=y' \
         'CONFIG_SCHED_MC=y' \
         'CONFIG_SCHED_SMT=y' \
+        '' \
+        '# --- REDUÇÃO DE SOBRECARGA (DEBLOAT) ---' \
+        '# CONFIG_DEBUG_KERNEL is not set' \
+        '# CONFIG_DEBUG_INFO is not set' \
+        '# CONFIG_DEBUG_FS is not set' \
+        '# CONFIG_FTRACE is not set' \
+        '# CONFIG_FUNCTION_TRACER is not set' \
+        '# CONFIG_KPROBES is not set' \
+        '# CONFIG_LATENCYTOP is not set' \
+        '# CONFIG_PROFILING is not set' \
+        '' \
+        '# --- GERENCIAMENTO DE PROCESSOS E BATERIA ---' \
         'CONFIG_SCHED_WALT=y' \
         'CONFIG_UCLAMP_TASK=y' \
         'CONFIG_CFS_BANDWIDTH=y' \
         'CONFIG_HZ_300=y' \
         'CONFIG_PREEMPT=y' \
         'CONFIG_NO_HZ_FULL=y' \
+        '' \
+        '# --- CONTROLE DE FREQUÊNCIA CPU GPU ---' \
         'CONFIG_CPU_FREQ=y' \
         'CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y' \
         'CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y' \
@@ -93,24 +106,84 @@ jobs:
         'CONFIG_QCOM_DEVFREQ=y' \
         'CONFIG_MSM_ADRENO_TZ=y' \
         'CONFIG_QCOM_KGSL=y' \
+        '' \
+        '# --- MEMÓRIA E ARMAZENAMENTO ---' \
         'CONFIG_ZRAM=y' \
         'CONFIG_LZ4_COMPRESS=y' \
         'CONFIG_SWAP=y' \
         'CONFIG_TRANSPARENT_HUGEPAGE=y' \
+        'CONFIG_TMPFS_POSIX_ACL=y' \
+        'CONFIG_TMPFS_XATTR=y' \
+        'CONFIG_MQ_IOSCHED_DEADLINE=y' \
+        'CONFIG_BLK_DEV_THROTTLING=y' \
+        '' \
+        '# --- REDE ---' \
         'CONFIG_TCP_CONG_BBR=y' \
         'CONFIG_NET_SCH_FQ=y' \
         'CONFIG_NET_SCH_FQ_CODEL=y' \
-        'CONFIG_PROCESS_RECLAIM=y' \
-        'CONFIG_SCSI_UFS_QCOM=y' \
-        'CONFIG_SCSI_UFSHCD_PLATFORM=y' \
-        'CONFIG_INLINE_CRYPT=y' \
-        'CONFIG_FS_ENCRYPTION_INLINE_CRYPT=y' \
-        'CONFIG_OVERLAY_FS=y' \
-        'CONFIG_COMPACTION=y' \
-        'CONFIG_MIGRATION=y' \
+        '' \
+        '# --- ANDROID ---' \
+        'CONFIG_ANDROID=y' \
         'CONFIG_ANDROID_BINDER_IPC=y' \
         'CONFIG_ANDROID_BINDERFS=y' \
+        '' \
+        '# --- VMM ---' \
+        'CONFIG_CLEANCACHE=y' \
+        'CONFIG_FRONTSWAP=y' \
+        'CONFIG_CMA=y' \
+        'CONFIG_CMA_AREAS=7' \
+        'CONFIG_PROCESS_RECLAIM=y' \
+        '' \
+        '# --- UFS 3.1 ---' \
+        'CONFIG_SCSI_UFS_QCOM=y' \
+        'CONFIG_SCSI_UFSHCD_PLATFORM=y' \
+        'CONFIG_BLOCK_COMPAT=y' \
+        'CONFIG_FS_ENCRYPTION_INLINE_CRYPT=y' \
+        'CONFIG_INLINE_CRYPT=y' \
+        '' \
+        '# --- AUDIO ---' \
+        '# CONFIG_AUDIT is not set' \
+        '# CONFIG_AUDITSYSCALL is not set' \
+        'CONFIG_SND_DYNAMIC_MINORS=y' \
+        'CONFIG_SND_MAX_CARDS=32' \
+        '' \
+        '# --- REDE GAMING ---' \
+        'CONFIG_NET_EMATCH=y' \
+        'CONFIG_NET_CLS_ACT=y' \
+        'CONFIG_NET_CLS_FLOWER=y' \
+        '' \
+        '# --- THERMAL ---' \
+        'CONFIG_THERMAL_GOV_USER_SPACE=y' \
+        'CONFIG_THERMAL_GOV_POWER_ALLOCATOR=y' \
+        '' \
+        '# --- SCHEDULER ---' \
+        '# CONFIG_SCHED_AUTOGROUP is not set' \
+        'CONFIG_SCHED_HRTICK=y' \
+        '# CONFIG_FAIR_GROUP_SCHED is not set' \
+        '# CONFIG_RT_GROUP_SCHED is not set' \
+        '# CONFIG_SCHED_CORE is not set' \
+        '' \
+        '# --- SEGURANÇA ---' \
+        'CONFIG_SECURITY_SELINUX_DEVELOP=y' \
+        '# CONFIG_RANDOMIZE_BASE is not set' \
+        '# CONFIG_STACKPROTECTOR is not set' \
+        '# CONFIG_STACKPROTECTOR_STRONG is not set' \
+        'CONFIG_CC_STACKPROTECTOR_NONE=y' \
+        '' \
+        '# --- MEMÓRIA VIRTUAL ---' \
+        'CONFIG_COMPACTION=y' \
+        'CONFIG_MIGRATION=y' \
+        '# CONFIG_BOUNCE is not set' \
+        '# CONFIG_KSM is not set' \
+        '' \
+        '# --- GPU DISPLAY ---' \
+        '# CONFIG_DRM_FBDEV_EMULATION is not set' \
+        '# CONFIG_FB is not set' \
+        '' \
+        '# --- KERNELSU ---' \
         'CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y' \
+        'CONFIG_KSU=y' \
+        'CONFIG_OVERLAY_FS=y' \
         'CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES="dubai"' \
         'CONFIG_BUILD_ARM64_DT_OVERLAY=y' \
         > arch/arm64/configs/vendor/dubai_optimizations.config
