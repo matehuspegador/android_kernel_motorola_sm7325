@@ -25,7 +25,7 @@ env:
   OUT_DIR: out
   ARCH: arm64
   ANYKERNEL_REPO: https://github.com/osm0sis/AnyKernel3.git
-  CLANG_URL: https://github.com/LineageOS/android_prebuilts_clang_host_linux-x86_clang-r383902/releases/download/14.0.6/clang-14.0.6.tar.gz
+  CLANG_URL: https://github.com/kdrag0n/proton-clang.git
 
 jobs:
   build:
@@ -61,7 +61,7 @@ jobs:
           
           echo "Baixando Clang estável para kernel 5.4..."
           curl -L --progress-bar -o clang.tar.gz \
-            "https://github.com/LineageOS/android_prebuilts_clang_host_linux-x86_clang-r383902/releases/download/14.0.6/clang-14.0.6.tar.gz"
+            "https://github.com/kdrag0n/proton-clang.git" clang.tar.gz
           
           echo "Verificando tamanho do arquivo..."
           ls -lh clang.tar.gz
