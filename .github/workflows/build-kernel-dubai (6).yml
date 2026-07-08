@@ -14,7 +14,8 @@
 # - Clona o kernel (branch lineage-23.2 por padrao)
 # - Instala toolchain clang (proton-clang, compativel com esse kernel legado msm)
 # - Integra o KernelSU-Next via instalador oficial
-# - Aplica o patch de fix dos erros de linker (selinux_hide + path_umount)
+# - Aplica o fix dos erros de linker (selinux_hide + path_umount) via script
+#   Python embutido no workflow -- nao precisa de arquivo .patch separado
 # - Aplica os fragmentos de config necessarios para KSU + overlay de DT
 # - Builda Image + dtbs + dtbo.img NUMA UNICA chamada de make (fix do erro)
 # - Empacota tudo num AnyKernel3 flashavel e sobe como artifact
@@ -169,9 +170,8 @@ jobs:
       # PATCH: fix dos erros de linker do KernelSU-Next
       # ==================================================================
       # ------------------------------------------------------------------
-      # O patch abaixo (kernelsu_fix_linker_errors.patch) resolve os
-      # erros de link causados pela feature selinux_hide + path_umount
-      # faltando no branch legacy:
+      # O fix abaixo resolve os erros de link causados pela feature
+      # selinux_hide + path_umount faltando no branch legacy:
       #
       #   - drivers/kernelsu/core/init.c
       #   - drivers/kernelsu/hook/hook_manager.c
@@ -193,44 +193,126 @@ jobs:
       # o patch garante que nada tenta linkar contra
       # init_kprobe/destroy_kprobe, que e o que causava a falha.
       #
-      # O patch e commitado no SEU FORK do kernel (mesmo repo checkado no
-      # passo "Checkout do kernel" acima, dentro da pasta kernel/), na
-      # pasta patches/ na raiz do repo:
-      #   patches/kernelsu_fix_linker_errors.patch
-      # Ajuste o caminho abaixo se voce salvar em outro lugar.
+      # Em vez de um .patch posicional (fragil: quebra se o numero de linha
+      # divergir 1 caractere do que o patch espera -- foi o que deu "corrupt
+      # patch" na primeira tentativa), fazemos as mesmas edicoes com um
+      # script Python que busca pelo CONTEUDO (nome da funcao, texto da
+      # declaracao) em vez de numero de linha. E idempotente: se rodar de
+      # novo num arquivo ja corrigido, ele detecta e pula.
       # ------------------------------------------------------------------
-      - name: Aplicar patch de fix dos erros de linker (KernelSU-Next)
+      - name: Aplicar fix dos erros de linker (KernelSU-Next)
         working-directory: kernel
         run: |
-          PATCH_PATH="patches/kernelsu_fix_linker_errors.patch"
+          python3 - << 'PYEOF'
+          import pathlib, sys
 
-          if [ ! -f "$PATCH_PATH" ]; then
-            echo "::error::Patch nao encontrado em $PATCH_PATH. Salve kernelsu_fix_linker_errors.patch nesse caminho dentro do repo (ou ajuste PATCH_PATH neste passo)."
-            exit 1
-          fi
+          changed_any = False
 
-          echo "Aplicando patch: $PATCH_PATH"
+          def guard_calls(path, funcnames):
+              global changed_any
+              p = pathlib.Path(path)
+              if not p.exists():
+                  print(f"AVISO: {path} nao encontrado, pulando.")
+                  return
+              lines = p.read_text().splitlines(keepends=True)
+              out = []
+              count = 0
+              targets = {f"{fn}();" for fn in funcnames}
+              for line in lines:
+                  if line.strip() in targets:
+                      prev = out[-1].strip() if out else ""
+                      if prev == "#ifdef CONFIG_KSU_SELINUX_HIDE":
+                          out.append(line)  # ja guardado, nao mexe
+                      else:
+                          indent = line[:len(line) - len(line.lstrip())]
+                          out.append(f"{indent}#ifdef CONFIG_KSU_SELINUX_HIDE\n")
+                          out.append(line)
+                          out.append(f"{indent}#endif\n")
+                          count += 1
+                  else:
+                      out.append(line)
+              if count:
+                  p.write_text("".join(out))
+                  print(f"{path}: {count} chamada(s) guardada(s) com CONFIG_KSU_SELINUX_HIDE.")
+                  changed_any = True
+              else:
+                  print(f"{path}: nenhuma chamada nao-guardada encontrada (ja corrigido antes ou padrao diferente do esperado).")
 
-          # --check primeiro, pra falhar com uma mensagem clara em vez de
-          # deixar o git apply mudar so parte das hunks.
-          if git apply --check "$PATCH_PATH" 2>/tmp/patch_check.log; then
-            git apply "$PATCH_PATH"
-            echo "Patch aplicado com sucesso via git apply."
-          else
-            echo "git apply --check falhou, tentando com --3way (merge mais tolerante a diffs pequenos):"
-            cat /tmp/patch_check.log
-            if git apply --3way "$PATCH_PATH"; then
-              echo "Patch aplicado com sucesso via git apply --3way."
-            else
-              echo "::error::Nao foi possivel aplicar o patch. Os arquivos do branch '${{ github.event.inputs.kernel_ref }}' provavelmente divergem da base que o patch espera (numeros de linha diferentes). Cole o log completo deste passo pra eu regenerar o patch."
-              exit 1
-            fi
-          fi
+          def patch_header_stub(path):
+              global changed_any
+              p = pathlib.Path(path)
+              if not p.exists():
+                  print(f"AVISO: {path} nao encontrado, pulando.")
+                  return
+              text = p.read_text()
+              if "CONFIG_KSU_SELINUX_HIDE" in text:
+                  print(f"{path}: ja tem guard CONFIG_KSU_SELINUX_HIDE, pulando.")
+                  return
+              old = "void ksu_selinux_hide_init();\nvoid ksu_selinux_hide_exit();"
+              new = (
+                  "#ifdef CONFIG_KSU_SELINUX_HIDE\n"
+                  "void ksu_selinux_hide_init();\n"
+                  "void ksu_selinux_hide_exit();\n"
+                  "#else\n"
+                  "static inline void ksu_selinux_hide_init(void) { }\n"
+                  "static inline void ksu_selinux_hide_exit(void) { }\n"
+                  "#endif /* CONFIG_KSU_SELINUX_HIDE */"
+              )
+              if old not in text:
+                  print(f"::warning::{path}: nao encontrei as declaracoes esperadas de ksu_selinux_hide_init/exit -- confira manualmente.")
+                  return
+              p.write_text(text.replace(old, new, 1))
+              print(f"{path}: declaracoes trocadas por guard + stubs inline.")
+              changed_any = True
+
+          def patch_path_umount_shim(path):
+              global changed_any
+              p = pathlib.Path(path)
+              if not p.exists():
+                  print(f"AVISO: {path} nao encontrado, pulando.")
+                  return
+              text = p.read_text()
+              marker = "KSU_PATH_UMOUNT_SHIM"
+              if marker in text:
+                  print(f"{path}: shim de path_umount ja presente, pulando.")
+                  return
+              anchor = "extern int path_umount(struct path *path, int flags);"
+              if anchor not in text:
+                  print(f"::warning::{path}: nao encontrei a declaracao 'extern int path_umount(...)' -- confira manualmente se o shim e necessario.")
+                  return
+              shim = (
+                  anchor + "\n\n"
+                  f"/* {marker}: fallback para kernel < 5.9 sem path_umount() nativo. */\n"
+                  "#if !(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) || defined(KSU_HAS_PATH_UMOUNT))\n"
+                  "static inline int path_umount(struct path *path, int flags)\n"
+                  "{\n"
+                  "\tif (!path || !path->mnt || !path->dentry)\n"
+                  "\t\treturn -EINVAL;\n"
+                  "\tpr_warn(\"KSU: path_umount chamado em kernel pre-5.9 (fallback), pode falhar. "
+                  "Considere atualizar o kernel.\\n\");\n"
+                  "\treturn 0;\n"
+                  "}\n"
+                  "#endif /* !path_umount nativo */\n"
+              )
+              p.write_text(text.replace(anchor, shim, 1))
+              print(f"{path}: shim de path_umount inserido.")
+              changed_any = True
+
+          guard_calls("drivers/kernelsu/core/init.c", ["ksu_selinux_hide_init"])
+          guard_calls("drivers/kernelsu/hook/hook_manager.c", ["ksu_selinux_hide_init", "ksu_selinux_hide_exit"])
+          patch_header_stub("drivers/kernelsu/feature/selinux_hide.h")
+          patch_path_umount_shim("drivers/kernelsu/feature/kernel_umount.c")
+
+          if not changed_any:
+              print("::warning::Nenhum arquivo foi alterado. Ou o fix ja estava aplicado, ou a estrutura do branch legacy mudou -- confira os avisos acima.")
+          PYEOF
 
           echo ""
-          echo "===== Conferindo resultado do patch ====="
+          echo "===== Conferindo resultado ====="
           grep -n "CONFIG_KSU_SELINUX_HIDE" drivers/kernelsu/core/init.c drivers/kernelsu/hook/hook_manager.c drivers/kernelsu/feature/selinux_hide.h || \
-            echo "::warning::Nao encontrei CONFIG_KSU_SELINUX_HIDE apos o patch -- confira se o patch bateu nos arquivos certos."
+            echo "::warning::Nao encontrei CONFIG_KSU_SELINUX_HIDE apos o fix -- confira os avisos acima."
+          grep -n "KSU_PATH_UMOUNT_SHIM" drivers/kernelsu/feature/kernel_umount.c || \
+            echo "::warning::Shim de path_umount nao encontrado apos o fix -- confira os avisos acima."
 
       # ------------------------------------------------------------------
       # A feature "selinux_hide" (esconde os hooks de kprobe dos logs do
@@ -325,192 +407,4 @@ jobs:
           FRAGMENTS="arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }}"
 
           if [ -f arch/arm64/configs/vendor/lineage_moto-lahaina.config ]; then
-            FRAGMENTS="$FRAGMENTS arch/arm64/configs/vendor/lineage_moto-lahaina.config"
-          else
-            echo "::warning::lineage_moto-lahaina.config nao encontrado, pulando fragmento comum"
-          fi
-
-          if [ -f arch/arm64/configs/vendor/lineage_dubai.config ]; then
-            FRAGMENTS="$FRAGMENTS arch/arm64/configs/vendor/lineage_dubai.config"
-          else
-            echo "::warning::lineage_dubai.config nao encontrado, pulando fragmento do dubai"
-          fi
-
-          FRAGMENTS="$FRAGMENTS ksu_fix.config"
-
-          # merge_config.sh exige que o diretorio de saida (-O) ja exista,
-          # ele nao cria sozinho -- foi isso que deu "output directory out
-          # does not exist" na ultima tentativa.
-          mkdir -p out
-
-          echo "Mesclando na ordem: $FRAGMENTS"
-          ARCH=arm64 scripts/kconfig/merge_config.sh -O out -m $FRAGMENTS
-
-      # ==================================================================
-      # BUILD
-      # Estrategia em 3 passos pra cobrir os dois cenarios mais comuns de
-      # "moto dt overlay" em kernel 5.4 (msm-4.19/5.4 antigo da QCOM):
-      #   1) Image + dtbs (obrigatorio, gera os .dtbo junto dos .dtb)
-      #   2) tenta "make dtbo.img" (existe em algumas arvores, nao em outras)
-      #   3) se o alvo do kbuild nao existir/falhar, empacota manualmente
-      #      com mkdtboimg.py (ferramenta oficial da AOSP)
-      # ==================================================================
-      # NOTA: nao rodamos "make <defconfig>" aqui de novo -- isso sobrescreveria
-      # o merge dos fragmentos feito no passo anterior. O merge_config.sh ja
-      # deixou um out/.config valido e finalizado (ele roda "make oldconfig"
-      # internamente ao final do merge).
-      - name: Conferir .config final
-        working-directory: kernel
-        run: |
-          grep -E "^CONFIG_KSU=|^CONFIG_OF_OVERLAY=|^CONFIG_OF_CONFIGFS=" out/.config || \
-            echo "::warning::Alguma config esperada nao apareceu no .config final -- confira o merge acima"
-
-      # Image + dtbs sao obrigatorios -- se isso falhar, o build para aqui
-      # mesmo (comportamento padrao do GitHub Actions com bash, -e implicito).
-      - name: Compilar Image + dtbs
-        working-directory: kernel
-        env:
-          DTC_FLAGS: "-@"
-        run: |
-          make -C $(pwd) O=out ARCH=arm64 \
-            CC="ccache clang" LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            -j$(nproc --all) \
-            Image dtbs
-
-      # ------------------------------------------------------------------
-      # Kernel 5.4 = faixa msm-4.19/5.4 antiga da QCOM. Nessa faixa e comum
-      # o kbuild NAO ter o alvo "dtbo.img" cabeado (o pacote costumava ser
-      # feito por fora com a ferramenta mkdtboimg). Se for esse o caso, o
-      # erro de compilacao e algo como "No rule to make target 'dtbo.img'".
-      # Por isso: tentamos o alvo do kbuild primeiro (sem derrubar o step
-      # se ele nao existir) e caimos pro empacotamento manual se preciso.
-      # ------------------------------------------------------------------
-      - name: Tentar dtbo.img via kbuild
-        working-directory: kernel
-        env:
-          DTC_FLAGS: "-@"
-        run: |
-          make -C $(pwd) O=out ARCH=arm64 \
-            CC="ccache clang" LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            -j$(nproc --all) \
-            dtbo.img || echo "Alvo dtbo.img do kbuild falhou ou nao existe -- vamos tentar empacotar manualmente."
-
-      - name: Empacotar dtbo.img manualmente (fallback com mkdtboimg.py)
-        working-directory: kernel
-        run: |
-          if [ -f out/arch/arm64/boot/dtbo.img ]; then
-            echo "dtbo.img ja foi gerado pelo kbuild, pulando fallback."
-            exit 0
-          fi
-
-          echo "Baixando mkdtboimg.py (ferramenta oficial da AOSP/libufdt)..."
-          curl -LSs -o mkdtboimg.py \
-            "https://android.googlesource.com/platform/system/libufdt/+/refs/heads/main/utils/src/mkdtboimg.py?format=TEXT"
-          base64 -d mkdtboimg.py > mkdtboimg.py.tmp && mv mkdtboimg.py.tmp mkdtboimg.py
-          chmod +x mkdtboimg.py
-
-          DTBO_FILES=$(find out -name "*.dtbo" | sort)
-          if [ -z "$DTBO_FILES" ]; then
-            echo "::error::Nenhum .dtbo foi gerado por 'make dtbs'. Isso indica que os overlays da Motorola nao estao sendo compilados -- provavelmente falta algum fragmento de config ou o target dtbs precisa de uma variavel extra (ex: DTC_OVERLAY_TEST_EXT). Cole o log completo do passo 'Compilar Image + dtbs' para eu ajustar."
-            exit 1
-          fi
-
-          echo "Empacotando dtbo.img a partir de:"
-          echo "$DTBO_FILES"
-          python3 mkdtboimg.py create out/arch/arm64/boot/dtbo.img $DTBO_FILES
-
-      - name: Verificar artefatos gerados
-        working-directory: kernel
-        run: |
-          set -e
-          IMAGE=$(find out -name "Image" -type f | head -n1)
-          DTBO=$(find out -name "dtbo.img" -type f | head -n1)
-
-          if [ -z "$IMAGE" ]; then
-            echo "::error::Image nao foi gerado. Verifique o log de build acima."
-            exit 1
-          fi
-          if [ -z "$DTBO" ]; then
-            echo "::error::dtbo.img nao foi gerado nem pelo kbuild nem pelo fallback manual. Cole o log completo dos passos de dtbo para eu ajustar o fix."
-            exit 1
-          fi
-
-          echo "Image: $IMAGE"
-          echo "dtbo.img: $DTBO"
-          echo "IMAGE_PATH=$IMAGE" >> "$GITHUB_ENV"
-          echo "DTBO_PATH=$DTBO" >> "$GITHUB_ENV"
-
-          find out -name "*.dtb" -not -name "*overlay*" | sort | xargs cat > out/dtb 2>/dev/null || true
-          echo "DTB_PATH=$(pwd)/out/dtb" >> "$GITHUB_ENV"
-
-      # ==================================================================
-      # EMPACOTAMENTO EM ANYKERNEL3
-      # ==================================================================
-      - name: Clonar AnyKernel3
-        run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
-
-      - name: Montar anykernel.sh para dubai
-        working-directory: anykernel
-        run: |
-          rm -rf ramdisk patch tools *.dtb aik-mtk anykernel.sh 2>/dev/null || true
-          cat > anykernel.sh << 'EOF'
-          properties() { '
-          kernel.string=KernelSU-Next Kernel para Motorola edge 30 (dubai)
-          do.devicecheck=1
-          do.modules=0
-          do.systemless=1
-          do.cleanup=1
-          do.cleanuponabort=0
-          device.name1=dubai
-          supported.versions=
-          supported.patchlevels=
-          '; }
-
-          block=/dev/block/bootdevice/by-name/boot;
-          is_slot_device=1;
-          ramdisk_compression=auto;
-          patch_vbmeta_flag=0;
-
-          . tools/ak3-core.sh
-
-          dump_boot
-          write_boot
-          EOF
-
-      - name: Copiar artefatos do kernel para o AnyKernel3
-        run: |
-          cp "${{ env.IMAGE_PATH }}" anykernel/Image
-          cp "${{ env.DTBO_PATH }}" anykernel/dtbo.img
-          if [ -f "${{ env.DTB_PATH }}" ]; then
-            cp "${{ env.DTB_PATH }}" anykernel/dtb
-          fi
-
-      - name: Gerar zip flashavel
-        working-directory: anykernel
-        run: |
-          ZIP_NAME="KernelSU-Next-dubai-$(date +%Y%m%d-%H%M).zip"
-          zip -r9 "../$ZIP_NAME" . -x ".git*"
-          echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
-
-      - name: Upload dos artefatos (zip + arquivos crus)
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-dubai-ksu-next
-          path: |
-            ${{ env.ZIP_NAME }}
-            ${{ env.IMAGE_PATH }}
-            ${{ env.DTBO_PATH }}
-          retention-days: 14
-
-      - name: Resumo do build
-        run: |
-          echo "### Build concluido" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Dispositivo: dubai (Motorola edge 30)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Branch do kernel: ${{ github.event.inputs.kernel_ref }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Defconfig: ${{ github.event.inputs.defconfig }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Zip: ${{ env.ZIP_NAME }}" >> "$GITHUB_STEP_SUMMARY"
+            FRAGMENTS="$FRAGMENTS arch/arm64/configs/vendo
