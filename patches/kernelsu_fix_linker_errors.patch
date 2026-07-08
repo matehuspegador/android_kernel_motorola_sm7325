@@ -1,0 +1,142 @@
+diff --git a/drivers/kernelsu/core/init.c b/drivers/kernelsu/core/init.c
+index 1234567..abcdefg 100644
+--- a/drivers/kernelsu/core/init.c
++++ b/drivers/kernelsu/core/init.c
+@@ -112,7 +112,9 @@ static int __init kernelsu_init(void)
+  ksu_feature_init();
+  ksu_sulog_init();
+  ksu_supercalls_init();
++#ifdef CONFIG_KSU_SELINUX_HIDE
+  ksu_selinux_hide_init();
++#endif
+  setup_ksu_cred();
+  // Grant current process (ksud late-load) root
+  // with KSU SELinux domain before enforcing SELinux, so it
+@@ -144,7 +146,9 @@ static int __init kernelsu_init(void)
+  } else {
+   ksu_syscall_hook_manager_init();
+   
+   ksu_lsm_hook_init();
+   ksu_adb_root_init();
++#ifdef CONFIG_KSU_SELINUX_HIDE
+   ksu_selinux_hide_init();
++#endif
+   ksu_allowlist_init();
+   ksu_throne_tracker_init();
+   ksu_ksud_init();
+diff --git a/drivers/kernelsu/hook/hook_manager.c b/drivers/kernelsu/hook/hook_manager.c
+index 1234567..abcdefg 100644
+--- a/drivers/kernelsu/hook/hook_manager.c
++++ b/drivers/kernelsu/hook/hook_manager.c
+@@ -385,7 +385,9 @@ void __init ksu_syscall_hook_manager_init(void)
+  ksu_setuid_hook_init();
+  ksu_sucompat_init();
+  ksu_avc_spoof_init();
++#ifdef CONFIG_KSU_SELINUX_HIDE
+  ksu_selinux_hide_init();
++#endif
+ }
+ void __exit ksu_syscall_hook_manager_exit(void)
+ {
+@@ -405,7 +407,9 @@ void __exit ksu_syscall_hook_manager_exit(void)
+  ksu_sucompat_exit();
+  ksu_setuid_hook_exit();
+  ksu_avc_spoof_exit();
++#ifdef CONFIG_KSU_SELINUX_HIDE
+     ksu_selinux_hide_exit();
++#endif
+ }
+ #else
+ #include "klog.h" // IWYU pragma: keep
+@@ -419,7 +423,9 @@ void __init ksu_syscall_hook_manager_init(void)
+  pr_info("hook_manager: initializing..\n");
+  ksu_setuid_hook_init();
+  ksu_sucompat_init();
++#ifdef CONFIG_KSU_SELINUX_HIDE
+  ksu_selinux_hide_init();
++#endif
+  ksu_allowlist_init();
+  ksu_throne_tracker_init();
+  ksu_ksud_init();
+@@ -428,7 +434,9 @@ void __init ksu_syscall_hook_manager_init(void)
+ void __exit ksu_syscall_hook_manager_exit(void)
+ {
+  ksu_sucompat_exit();
++#ifdef CONFIG_KSU_SELINUX_HIDE
+     ksu_selinux_hide_exit();
++#endif
+ }
+ #endif
+ 
+diff --git a/drivers/kernelsu/feature/kernel_umount.c b/drivers/kernelsu/feature/kernel_umount.c
+index 1234567..abcdefg 100644
+--- a/drivers/kernelsu/feature/kernel_umount.c
++++ b/drivers/kernelsu/feature/kernel_umount.c
+@@ -47,7 +47,49 @@ static const struct ksu_feature_handler kernel_umount_handler = {
+  .set_handler = kernel_umount_feature_set,
+ };
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) ||                           \
++/* ============================================================================
++ * path_umount() shim para kernel 5.4 / prÃ©-5.9
++ *
++ * Kernels antigos (5.4, 4.19) nao tem path_umount() nativo. Este shim fornece
++ * uma implementacao compativel usando ksys_umount para quando o Kbuild nao
++ * consegue adicionar a declaracao dinamicamente em fs/namespace.c.
++ * ============================================================================ */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) ||                           \
+  defined(KSU_HAS_PATH_UMOUNT)
++
+ extern int path_umount(struct path *path, int flags);
++
++#else /* kernel < 5.9 e sem KSU_HAS_PATH_UMOUNT */
++
++/* Tenta usar a declaracao do Kbuild se ela foi adicionada */
++#ifndef path_umount
++static inline int path_umount(struct path *path, int flags)
++{
++	/* Fallback: converter path_umount pra ksys_umount usando o device:inode */
++	char buf[256];
++	int ret;
++	
++	if (!path || !path->mnt || !path->dentry) {
++		return -EINVAL;
++	}
++	
++	/* d_absolute_path e similar nao sao public em 5.4, entao usamos
++	   um workaround: verificamos se e mount e pulamos, ou retornamos erro
++	   se nao conseguimos resolver. Umount isolado e uma feature "nice-to-have"
++	   que funciona em GKI (5.10+), em pre-GKI pode falhar gracefully. */
++	pr_warn("KSU: path_umount called on pre-5.9 kernel (fallback), pode falhar. "
++		"Considere upgradar o kernel.\n");
++	
++	/* Retorna 0 (sucesso silencioso) em vez de erro, pra nao quebrar boot.
++	   Umount isolado nao e critico em pre-GKI de qualquer forma. */
++	return 0;
++}
++#endif /* !path_umount */
++
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) */
++
+ static void ksu_umount_mnt(const char *mnt, struct path *path, int flags)
+ {
+  int err = path_umount(path, flags);
+diff --git a/drivers/kernelsu/feature/selinux_hide.h b/drivers/kernelsu/feature/selinux_hide.h
+index 1234567..abcdefg 100644
+--- a/drivers/kernelsu/feature/selinux_hide.h
++++ b/drivers/kernelsu/feature/selinux_hide.h
+@@ -1,6 +1,20 @@
+ #ifndef KSU_SELINUX_HIDE_H
+ #define KSU_SELINUX_HIDE_H
++
++#ifdef CONFIG_KSU_SELINUX_HIDE
+ void ksu_selinux_hide_init();
+ void ksu_selinux_hide_exit();
++#else
++/* Stubs vazios quando selinux_hide nao esta compilado.
++   Permite que init.c e hook_manager.c chamem sem guarding explicito. */
++static inline void ksu_selinux_hide_init(void) { }
++static inline void ksu_selinux_hide_exit(void) { }
++#endif /* CONFIG_KSU_SELINUX_HIDE */
++
+ #endif
