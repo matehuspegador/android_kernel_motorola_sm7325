@@ -1,4 +1,4 @@
-# Adreno 640L Performance & FPS Optimizations for SM7325
+# Adreno 642L Performance & FPS Optimizations for SM7325
 diff --git a/drivers/gpu/drm/msm/adreno/a6xx/a6xx_gpu.c b/drivers/gpu/drm/msm/adreno/a6xx/a6xx_gpu.c
 index 0000000..1111111 100644
 --- a/drivers/gpu/drm/msm/adreno/a6xx/a6xx_gpu.c
@@ -6,22 +6,22 @@ index 0000000..1111111 100644
 @@ -120,12 +120,18 @@
  	/* Aumenta frequência mínima para reduzir stutter */
  	.devfreq.min_freq = 180000000,
- 	.devfreq.max_freq = 670000000,     // Max da 640L
+ 	.devfreq.max_freq = 670000000,     // Max da 642L
 +	.idle_timeout = 80,                // Reduzido para FPS mais estável
  };
 
 +/* Boost para jogos */
-+static struct adreno_boost_param adreno_640l_boost = {
++static struct adreno_boost_param adreno_642l_boost = {
 +	.boost = 1,
 +	.boost_freq = 550000000,
 +};
 
- static const struct adreno_gpu adreno_gpu_640l = {
+ static const struct adreno_gpu adreno_gpu_642l = {
  	.gpu = {
  		.pwrlevel = 0,
 -		.min_pwrlevel = 4,
 +		.min_pwrlevel = 2,   // Começa em frequência mais alta
  		.max_pwrlevel = 0,
  	},
-+	.boost_param = &adreno_640l_boost,
++	.boost_param = &adreno_642l_boost,
  };
