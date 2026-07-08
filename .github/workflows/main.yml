@@ -106,8 +106,23 @@ jobs:
             curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s --
           fi
 
+      - name: Corrigir compatibilidade linux/pgtable.h (kernel < 5.10)
+        run: |
+          cd "$KERNEL_DIR"
+          if [ ! -f include/linux/pgtable.h ]; then
+            echo "Criando shim include/linux/pgtable.h..."
+            cat > include/linux/pgtable.h << 'EOF'
+          #ifndef _LINUX_PGTABLE_H
+          #define _LINUX_PGTABLE_H
+          #include <asm/pgtable.h>
+          #endif
+          EOF
+            echo "Shim criado com sucesso!"
+          else
+            echo "include/linux/pgtable.h ja existe, pulando."
+          fi
 
-
+     
       - name: Corrigir allowlist.c (API task_work_add incompativel com kernel 5.4)
         run: |
           cd "$KERNEL_DIR"
@@ -128,6 +143,8 @@ jobs:
           else
             echo "allowlist.c nao encontrado, pulando"
           fi
+
+          
       - name: Configurar kernel + Otimizações
         run: |
           cd "$KERNEL_DIR"
