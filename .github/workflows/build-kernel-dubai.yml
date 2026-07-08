@@ -158,8 +158,8 @@ jobs:
 
       # ==================================================================
       # PATCH: fix dos erros de linker do KernelSU-Next
-      # ===========================================================     
-      - name: Integrar KernelSU-Next Legacy (Versão corrigida 2026)
+      # ===========================================================         
+      - name: Integrar KernelSU-Next Legacy (Método Oficial)
         working-directory: kernel
         run: |
           echo "Removendo instalação anterior..."
@@ -168,28 +168,23 @@ jobs:
           echo "Clonando KernelSU-Next legacy..."
           git clone --depth=1 -b legacy https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
 
-          echo "Verificando estrutura do KernelSU-Next..."
-          ls -la KernelSU-Next/
+          echo "Executando setup.sh oficial..."
+          cd KernelSU-Next/kernel
+          chmod +x setup.sh
+          ./setup.sh || echo "setup.sh retornou erro (ver log acima)"
 
-          echo "Copiando drivers..."
-          if [ -d "KernelSU-Next/kernel/drivers" ]; then
-            cp -a KernelSU-Next/kernel/drivers/* drivers/ 2>/dev/null || true
-            echo "→ Copiado de KernelSU-Next/kernel/drivers/"
-          elif [ -d "KernelSU-Next/drivers" ]; then
-            cp -a KernelSU-Next/drivers/* drivers/ 2>/dev/null || true
-            echo "→ Copiado de KernelSU-Next/drivers/"
+          cd ../../
+
+          # Verifica se foi criado corretamente
+          if [ -d "drivers/kernelsu" ]; then
+            echo "✅ KernelSU-Next integrado com sucesso via setup.sh"
+            ls -la drivers/kernelsu/
           else
-            echo "::error::Estrutura desconhecida!"
-            tree KernelSU-Next/ -L 3 || ls -R KernelSU-Next/
-            exit 1
-          fi
+            echo "::warning::drivers/kernelsu não foi criado. Tentando cópia manual..."
+            cp -a KernelSU-Next/kernel/* drivers/ 2>/dev/null || true
+            ln -sf ../KernelSU-Next/kernel drivers/kernelsu 2>/dev/null || true
+          fiigida 2026)
 
-          # Link simbólico (muito importante para alguns kernels)
-          mkdir -p drivers
-          ln -sf ../KernelSU-Next/kernel/drivers/kernelsu drivers/kernelsu 2>/dev/null || true
-          ln -sf ../KernelSU-Next drivers/kernelsu 2>/dev/null || true
-
-          echo "KernelSU-Next legacy integrado com sucesso."=======
       # ------------------------------------------------------------------
       # O fix abaixo resolve os erros de link causados pela feature
       # selinux_hide + path_umount faltando no branch legacy:
