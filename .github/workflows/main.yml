@@ -90,25 +90,6 @@ jobs:
             
             echo "✅ fsnotify_ops corrigido com printf!"
           fi
-
-      - name: Fix Moto DT Overlay Error
-        run: |
-          cd "$KERNEL_DIR"
-          echo "🔧 Aplicando fix agressivo para Moto DT Overlay..."
-          
-          # Método 1: Adicionar no Makefile
-          printf "\nMOT_DT_OVERLAY := y\n" >> arch/arm64/boot/dts/vendor/qcom/Makefile || true
-          
-          # Método 2: Criar/Editar arquivo de overlay
-          mkdir -p arch/arm64/boot/dts/vendor/qcom
-          printf "#define MOT_DT_OVERLAY 1\n" > arch/arm64/boot/dts/vendor/qcom/dubai-overlay.dtsi || true
-          
-          # Método 3: Forçar variável de ambiente
-          export MOT_DT_OVERLAY=y
-          echo "MOT_DT_OVERLAY=y" >> Makefile || true
-          
-          echo "✅ Fix Moto DT Overlay aplicado"
-          cat arch/arm64/boot/dts/vendor/qcom/Makefile | tail -n 10
           
       - name: Corrigir allowlist.c
         run: |
@@ -122,6 +103,7 @@ jobs:
       - name: Configurar kernel (dubai + FPS)
         run: |
           cd "$KERNEL_DIR"
+          export MOT_DT_OVERLAY=y
           make O=../$OUT_DIR ARCH=arm64 vendor/lahaina-qgki_defconfig
           ./scripts/kconfig/merge_config.sh -O ../$OUT_DIR \
             ../$OUT_DIR/.config \
