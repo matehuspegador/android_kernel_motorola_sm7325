@@ -143,6 +143,29 @@ jobs:
           echo "KernelSU-Next integrado, versao base: $KSU_VERSION"
 
       # ------------------------------------------------------------------
+      # A feature "selinux_hide" (esconde os hooks de kprobe dos logs do
+      # SELinux) esta incompleta no branch "legacy" -- e um feature request
+      # ainda em aberto no repo oficial (issue #1269), nao um bug nosso.
+      # As funcoes init_kprobe/destroy_kprobe que o arquivo espera nao
+      # existem nessa branch. E uma feature cosmetica/anti-deteccao, nao
+      # afeta o funcionamento do root em si -- entao desabilitamos a
+      # compilacao desse arquivo especifico em vez de tentar completar
+      # uma feature que os proprios devs ainda nao portaram pro legacy.
+      # ------------------------------------------------------------------
+      - name: Desabilitar feature selinux_hide (incompleta no branch legacy)
+        working-directory: kernel
+        run: |
+          FOUND=0
+          for mkfile in $(grep -rl "selinux_hide\.o" drivers/kernelsu/ 2>/dev/null); do
+            sed -i '/selinux_hide\.o/s/^/#/' "$mkfile"
+            echo "Comentado selinux_hide.o em: $mkfile"
+            FOUND=1
+          done
+          if [ "$FOUND" -eq 0 ]; then
+            echo "::warning::Nenhuma referencia a selinux_hide.o encontrada nos Makefiles -- talvez a estrutura do branch legacy tenha mudado. Se o erro persistir, cole o novo log."
+          fi
+
+      # ------------------------------------------------------------------
       # Esse patch de pgtable.h era necessario com o branch "next" (kernel
       # 5.4 nao tem linux/pgtable.h nativo). Com o branch "legacy" isso
       # provavelmente nao e mais preciso, mas deixamos aqui como rede de
@@ -397,4 +420,3 @@ jobs:
           echo "- Defconfig: ${{ github.event.inputs.defconfig }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- KernelSU-Next branch: ${{ github.event.inputs.ksu_branch }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Zip: ${{ env.ZIP_NAME }}" >> "$GITHUB_STEP_SUMMARY"
-          
