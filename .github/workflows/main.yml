@@ -99,8 +99,8 @@ jobs:
         run: |
           cd "$KERNEL_DIR"
           if [ "${{ github.event.inputs.kernelsu_variant }}" = "KernelSU-Next (fork da comunidade)" ]; then
-            echo "Instalando KernelSU-Next..."
-            curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -s --
+            echo "Instalando KernelSU-Next (modo legacy para kernel 5.4)..."
+            curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -s legacy
           else
             echo "Instalando KernelSU oficial..."
             curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s --
