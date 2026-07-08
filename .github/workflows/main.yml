@@ -99,34 +99,13 @@ jobs:
         run: |
           cd "$KERNEL_DIR"
           if [ "${{ github.event.inputs.kernelsu_variant }}" = "KernelSU-Next (fork da comunidade)" ]; then
-            echo "Instalando KernelSU-Next (modo legacy para kernel 5.4)..."
-            curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -s legacy
+            echo "Instalando KernelSU-Next v3.0.0 (antes do selinux_hide)..."
+            curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/v3.0.0/kernel/setup.sh | bash -s v3.0.0 legacy
           else
             echo "Instalando KernelSU oficial..."
             curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s --
           fi
 
-      - name: Desabilitar selinux_hide (incompativel com modo legacy no kernel 5.4)
-        run: |
-          cd "$KERNEL_DIR"
-          HIDE_FILE=$(find drivers/kernelsu -name "selinux_hide.c" 2>/dev/null | head -n1)
-          if [ -n "$HIDE_FILE" ]; then
-            HIDE_DIR=$(dirname "$HIDE_FILE")
-            MAKEFILE="$HIDE_DIR/Makefile"
-            echo "Encontrado: $HIDE_FILE"
-            if [ -f "$MAKEFILE" ] && grep -q "selinux_hide" "$MAKEFILE"; then
-              sed -i '/selinux_hide\.o/d' "$MAKEFILE"
-              echo "selinux_hide.o removido da compilacao"
-            else
-              PARENT_MAKEFILE=$(find drivers/kernelsu -maxdepth 1 -name "Makefile")
-              if [ -f "$PARENT_MAKEFILE" ] && grep -q "selinux_hide" "$PARENT_MAKEFILE"; then
-                sed -i '/selinux_hide/d' "$PARENT_MAKEFILE"
-                echo "selinux_hide removido do Makefile pai"
-              fi
-            fi
-          else
-            echo "selinux_hide.c nao encontrado, pulando"
-          fi
 
       - name: Configurar kernel + Otimizações
         run: |
