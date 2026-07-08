@@ -1,4 +1,4 @@
-name: Build sm7325 Kernel 5.4 (FPS + KernelSU)
+name: Build sm7325 Kernel 5.4 (FPS + KernelSU) - Dubai
 
 on:
   workflow_dispatch:
@@ -7,16 +7,12 @@ on:
         description: "Branch do kernel"
         required: true
         default: "lineage-22.2"
-      device_codename:
-        description: "Codinome do dispositivo"
-        required: true
-        default: "dubai"
       kernelsu_variant:
         description: "KernelSU Variant"
         type: choice
         options:
-          - "tiann/KernelSU (oficial)"
           - "KernelSU-Next (fork da comunidade)"
+          - "KernelSU oficial"
         default: "KernelSU-Next (fork da comunidade)"
 
 env:
@@ -49,9 +45,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-sm7325-5.4-${{ github.sha }}
+          key: ccache-sm7325-5.4-dubai-${{ github.sha }}
 
-      - name: Clonar kernel
+      - name: Clonar kernel (lineage-22.2)
         run: git clone --depth=1 -b "${{ github.event.inputs.kernel_branch }}" "$KERNEL_REPO" "$KERNEL_DIR"
 
       - name: Baixar Proton Clang
@@ -59,23 +55,6 @@ jobs:
           mkdir -p clang
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-
-      - name: Aplicar patches (pasta patches/)
-        run: |
-          cd "$KERNEL_DIR"
-          git config user.email "ci@localhost"
-          git config user.name "CI Bot"
-          if [ -d "../patches" ] && [ "$(ls ../patches/*.patch 2>/dev/null)" ]; then
-            for p in $(ls ../patches/*.patch | sort); do
-              echo "Aplicando: $(basename "$p")"
-              git am --3way "$p" 2>/dev/null || git apply --ignore-whitespace "$p" 2>/dev/null || echo "Falhou: $p"
-            done
-          fi
-
-      - name: Corrigir task_mmu.c
-        run: |
-          cd "$KERNEL_DIR"
-          sed -i 's/split_huge_pmd(vma, addr, pmd);/split_huge_pmd(vma, pmd, addr);/' fs/proc/task_mmu.c 2>/dev/null || true
 
       - name: Integrar KernelSU
         run: |
@@ -88,25 +67,27 @@ jobs:
             curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s --
           fi
 
-      - name: Reescrever fsnotify_ops para kernel 5.4
+      - name: Corrigir fsnotify_ops (Kernel 5.4)
         run: |
           cd "$KERNEL_DIR"
           FILE=$(find drivers/kernelsu -name "pkg_observer.c" 2>/dev/null | head -n1)
           if [ -n "$FILE" ]; then
-            echo "🔧 Reescrevendo fsnotify_ops em $FILE"
+            echo "🔧 Corrigindo fsnotify_ops em $FILE"
             cp "$FILE" "$FILE.bak"
             
-            # Remove bloco antigo
+            # Remove declaração antiga se existir
             sed -i '/static const struct fsnotify_ops ksu_fsnotify_ops = {/,/};/d' "$FILE"
             
-            # Adiciona versão compatível com 5.4
-            sed -i '/^static int ksu_handle_inode_event.*{/!b; :a; n; /}/!ba; a\
-            static const struct fsnotify_ops ksu_fsnotify_ops = {\
-            	.handle_event = ksu_handle_inode_event,\
-            };' "$FILE"
+            # Adiciona versão compatível usando printf
+            printf '\nstatic int ksu_handle_inode_event(struct fsnotify_mark *mark, u32 mask,\n' >> "$FILE"
+            printf '                                  struct inode *inode, struct inode *dir,\n' >> "$FILE"
+            printf '                                  const struct qstr *name, u32 cookie)\n' >> "$FILE"
+            printf '{\n    return 0;\n}\n\n' >> "$FILE"
+            printf 'static const struct fsnotify_ops ksu_fsnotify_ops = {\n' >> "$FILE"
+            printf '    .handle_event = ksu_handle_inode_event,\n' >> "$FILE"
+            printf '};\n' >> "$FILE"
             
-            echo "✅ fsnotify_ops corrigido!"
-            grep -A15 "fsnotify_ops" "$FILE" || true
+            echo "✅ fsnotify_ops corrigido para kernel 5.4!"
           fi
 
       - name: Corrigir allowlist.c
@@ -116,32 +97,14 @@ jobs:
           if [ -f "$FILE" ]; then
             sed -i 's/TWA_RESUME/true/g' "$FILE"
             grep -q "#include <linux/sched/task.h>" "$FILE" || sed -i '1i #include <linux/sched/task.h>' "$FILE"
-            echo "allowlist.c corrigido"
+            echo "✅ allowlist.c corrigido"
           fi
 
-      - name: Corrigir pgtable.h
+      - name: Configurar kernel (dubai + FPS)
         run: |
           cd "$KERNEL_DIR"
-          if [ ! -f include/linux/pgtable.h ]; then
-            mkdir -p include/linux
-            cat > include/linux/pgtable.h << 'EOF'
-          #ifndef _LINUX_PGTABLE_H
-          #define _LINUX_PGTABLE_H
-          #include <asm/pgtable.h>
-          #endif
-          EOF
-          fi
-
-      - name: Configurar kernel + FPS
-        run: |
-          cd "$KERNEL_DIR"
-          make O=../$OUT_DIR ARCH=arm64 \
-            vendor/lahaina-qgki_defconfig \
-            vendor/lineage_moto-lahaina.config \
-            vendor/lineage_dubai.config
-          ./scripts/kconfig/merge_config.sh -O ../$OUT_DIR \
-            ../$OUT_DIR/.config \
-            ../configs/fps_optimizations.config
+          make O=../$OUT_DIR ARCH=arm64 vendor/lahaina-qgki_defconfig
+          ./scripts/kconfig/merge_config.sh -O ../$OUT_DIR ../$OUT_DIR/.config ../configs/fps_optimizations.config 2>/dev/null || true
           make O=../$OUT_DIR ARCH=arm64 olddefconfig
 
       - name: Compilar Kernel
@@ -158,10 +121,10 @@ jobs:
 
       - name: Empacotar AnyKernel3
         run: |
-          IMG=$(find $OUT_DIR -name "Image*" | head -n1)
+          IMG=$(find $OUT_DIR -name "Image.gz-dtb" -o -name "Image" | head -n1)
           if [ -z "$IMG" ]; then
-            echo "Build falhou!"
-            tail -n 150 build.log
+            echo "❌ Build falhou!"
+            tail -n 100 build.log
             exit 1
           fi
           git clone --depth=1 $ANYKERNEL_REPO anykernel
@@ -173,6 +136,6 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-dubai-5.4-fps-ksu
+          name: Edge30-Dubai-Kernel-5.4-KSU
           path: "*.zip"
           retention-days: 14
