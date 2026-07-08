@@ -159,31 +159,15 @@ jobs:
       # ==================================================================
       # PATCH: fix dos erros de linker do KernelSU-Next
       # ===========================================================         
-      - name: Integrar KernelSU-Next Legacy (Método Oficial)
+      - name: Integrar KernelSU-Next
         working-directory: kernel
         run: |
-          echo "Removendo instalação anterior..."
-          rm -rf KernelSU-Next drivers/kernelsu 2>/dev/null || true
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" \
+            | bash -s ${{ github.event.inputs.ksu_branch }}
 
-          echo "Clonando KernelSU-Next legacy..."
-          git clone --depth=1 -b legacy https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
-
-          echo "Executando setup.sh oficial..."
-          cd KernelSU-Next/kernel
-          chmod +x setup.sh
-          ./setup.sh || echo "setup.sh retornou erro (ver log acima)"
-
-          cd ../../
-
-          # Verifica se foi criado corretamente
-          if [ -d "drivers/kernelsu" ]; then
-            echo "✅ KernelSU-Next integrado com sucesso via setup.sh"
-            ls -la drivers/kernelsu/
-          else
-            echo "::warning::drivers/kernelsu não foi criado. Tentando cópia manual..."
-            cp -a KernelSU-Next/kernel/* drivers/ 2>/dev/null || true
-            ln -sf ../KernelSU-Next/kernel drivers/kernelsu 2>/dev/null || true
-          fiigida 2026)
+          KSU_VERSION=$(cd KernelSU-Next && git rev-list --count HEAD 2>/dev/null || echo "unknown")
+          echo "KSU_VERSION=$KSU_VERSION" >> "$GITHUB_ENV"
+          echo "KernelSU-Next integrado, versao base: $KSU_VERSION"
 
       # ------------------------------------------------------------------
       # O fix abaixo resolve os erros de link causados pela feature
