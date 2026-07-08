@@ -121,11 +121,11 @@ jobs:
           cd "$KERNEL_DIR"
           make O=../$OUT_DIR ARCH=arm64 olddefconfig
           
-          echo "Iniciando compilação (com flags compatíveis)..."
+          echo "Iniciando compilação..."
           make -j$(nproc) O=../$OUT_DIR ARCH=arm64 \
             CC="ccache clang" \
             LLVM=1 \
-            LLVM_IAS=0 \   # <--- Importante: desabilitado
+            LLVM_IAS=0 \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
