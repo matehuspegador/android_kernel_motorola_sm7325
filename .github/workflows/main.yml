@@ -17,7 +17,7 @@ on:
         options:
           - "tiann/KernelSU (oficial)"
           - "KernelSU-Next (fork da comunidade)"
-        default: "tiann/KernelSU (oficial)"
+        default: "KernelSU-Next (fork da comunidade)"  # Recomendado para 5.4
 
 env:
   KERNEL_REPO: https://github.com/LineageOS/android_kernel_motorola_sm7325.git
@@ -57,10 +57,8 @@ jobs:
       - name: Baixar Proton Clang
         run: |
           mkdir -p clang
-          echo "Baixando Proton Clang (kdrag0n)..."
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-          echo "Proton Clang configurado!"
           ls -la clang/bin/ | grep -E "clang$|aarch64" | head -n 5
 
       - name: Aplicar patches (pasta patches/)
@@ -80,99 +78,89 @@ jobs:
               fi
             done
           fi
-          echo "--- Arquivos .rej encontrados ---"
-          find . -name "*.rej" -exec echo {} \; -exec cat {} \;
 
       - name: Corrigir bug de ordem de argumentos em task_mmu.c
         run: |
           cd "$KERNEL_DIR"
           FILE="fs/proc/task_mmu.c"
           if grep -q "split_huge_pmd(vma, addr, pmd);" "$FILE"; then
-            echo "Corrigindo ordem de argumentos em split_huge_pmd()..."
             sed -i 's/split_huge_pmd(vma, addr, pmd);/split_huge_pmd(vma, pmd, addr);/' "$FILE"
-            echo "Corrigido: split_huge_pmd(vma, pmd, addr);"
-          else
-            echo "Padrao nao encontrado, pulando."
+            echo "Corrigido split_huge_pmd"
           fi
 
       - name: Integrar KernelSU
         run: |
           cd "$KERNEL_DIR"
           if [ "${{ github.event.inputs.kernelsu_variant }}" = "KernelSU-Next (fork da comunidade)" ]; then
-            echo "Instalando KernelSU-Next v3.0.0 (antes do selinux_hide)..."
+            echo "Instalando KernelSU-Next (melhor suporte legacy)..."
             curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/v3.0.0/kernel/setup.sh | bash -s v3.0.0 legacy
           else
             echo "Instalando KernelSU oficial..."
             curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s --
           fi
 
-      - name: Corrigir compatibilidade linux/pgtable.h (kernel < 5.10)
+      - name: Corrigir compatibilidade linux/pgtable.h
         run: |
           cd "$KERNEL_DIR"
           if [ ! -f include/linux/pgtable.h ]; then
-            echo "Criando shim include/linux/pgtable.h..."
+            mkdir -p include/linux
             cat > include/linux/pgtable.h << 'EOF'
           #ifndef _LINUX_PGTABLE_H
           #define _LINUX_PGTABLE_H
           #include <asm/pgtable.h>
           #endif
           EOF
-            echo "Shim criado com sucesso!"
-          else
-            echo "include/linux/pgtable.h ja existe, pulando."
           fi
-     
-      - name: Corrigir pkg_observer.c (campo incompativel com fsnotify do kernel 5.4)
+
+      - name: Corrigir pkg_observer.c (fsnotify kernel 5.4)
         run: |
           cd "$KERNEL_DIR"
           FILE=$(find drivers/kernelsu -name "pkg_observer.c" 2>/dev/null | head -n1)
           if [ -n "$FILE" ]; then
-            echo "Arquivo encontrado: $FILE"
+            echo "Aplicando correção completa em $FILE"
+            cp "$FILE" "${FILE}.bak"
+            
+            # Remove handle_inode_event incompatível
             sed -i '/\.handle_inode_event = ksu_handle_inode_event,/d' "$FILE"
-            echo "--- Resultado ---"
-            grep -n "handle_inode_event" "$FILE" || echo "OK, linha removida com sucesso"
-          else
-            echo "pkg_observer.c nao encontrado, pulando"
+            
+            # Adiciona handle_event compatível com 5.4
+            sed -i '/static const struct fsnotify_ops ksu_fsnotify_ops = {/a \
+            \t.handle_event = ksu_handle_inode_event,' "$FILE"
+            
+            echo "=== fsnotify_ops após correção ==="
+            grep -A15 "fsnotify_ops" "$FILE"
           fi
-      
-      - name: Corrigir allowlist.c (API task_work_add incompativel com kernel 5.4)
+
+      - name: Corrigir allowlist.c (task_work_add)
         run: |
           cd "$KERNEL_DIR"
           FILE="drivers/kernelsu/allowlist.c"
           if [ -f "$FILE" ]; then
-            echo "Corrigindo $FILE..."
-            
-            # Troca TWA_RESUME (kernel 5.9+) por true (kernel 5.4, terceiro param eh bool)
             sed -i 's/task_work_add(tsk, cb, TWA_RESUME);/task_work_add(tsk, cb, true);/' "$FILE"
-            
-            # Garante o include correto pra put_task_struct
             if ! grep -q "#include <linux/sched/task.h>" "$FILE"; then
               sed -i '1i #include <linux/sched/task.h>' "$FILE"
             fi
-            
-            echo "--- Resultado ---"
-            grep -n "task_work_add\|#include <linux/sched" "$FILE"
-          else
-            echo "allowlist.c nao encontrado, pulando"
+            echo "allowlist.c corrigido"
           fi
 
-          
-      - name: Configurar kernel + Otimizações
+      - name: Configurar kernel + Otimizações FPS
         run: |
           cd "$KERNEL_DIR"
           make O=../$OUT_DIR ARCH=arm64 \
             vendor/lahaina-qgki_defconfig \
             vendor/lineage_moto-lahaina.config \
             vendor/lineage_dubai.config
+          
           ./scripts/kconfig/merge_config.sh -O ../$OUT_DIR \
             ../$OUT_DIR/.config \
             ../configs/fps_optimizations.config
+          
           make O=../$OUT_DIR ARCH=arm64 olddefconfig
 
       - name: Compilar Kernel
         run: |
           cd "$KERNEL_DIR"
-          echo "Iniciando compilacao..."
+          echo "Iniciando compilação..."
           make -j$(nproc) O=../$OUT_DIR ARCH=arm64 \
             CC="ccache clang" \
             LLVM=1 \
@@ -188,7 +176,7 @@ jobs:
           IMG=$(find $OUT_DIR -name "Image*" | head -n1)
           if [ -z "$IMG" ]; then
             echo "Build falhou!"
-            tail -n 100 build.log
+            tail -n 200 build.log
             exit 1
           fi
           git clone --depth=1 $ANYKERNEL_REPO anykernel
