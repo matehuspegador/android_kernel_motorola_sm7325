@@ -106,20 +106,26 @@ jobs:
             curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s --
           fi
 
-      - name: Corrigir compatibilidade linux/pgtable.h (KernelSU em kernel menor que 5.10)
+      - name: Desabilitar selinux_hide (incompativel com modo legacy no kernel 5.4)
         run: |
           cd "$KERNEL_DIR"
-          if [ ! -f include/linux/pgtable.h ]; then
-            echo "Criando shim include/linux/pgtable.h..."
-            cat > include/linux/pgtable.h << 'EOF'
-          #ifndef _LINUX_PGTABLE_H
-          #define _LINUX_PGTABLE_H
-          #include <asm/pgtable.h>
-          #endif
-          EOF
-            echo "Shim criado com sucesso!"
+          HIDE_FILE=$(find drivers/kernelsu -name "selinux_hide.c" 2>/dev/null | head -n1)
+          if [ -n "$HIDE_FILE" ]; then
+            HIDE_DIR=$(dirname "$HIDE_FILE")
+            MAKEFILE="$HIDE_DIR/Makefile"
+            echo "Encontrado: $HIDE_FILE"
+            if [ -f "$MAKEFILE" ] && grep -q "selinux_hide" "$MAKEFILE"; then
+              sed -i '/selinux_hide\.o/d' "$MAKEFILE"
+              echo "selinux_hide.o removido da compilacao"
+            else
+              PARENT_MAKEFILE=$(find drivers/kernelsu -maxdepth 1 -name "Makefile")
+              if [ -f "$PARENT_MAKEFILE" ] && grep -q "selinux_hide" "$PARENT_MAKEFILE"; then
+                sed -i '/selinux_hide/d' "$PARENT_MAKEFILE"
+                echo "selinux_hide removido do Makefile pai"
+              fi
+            fi
           else
-            echo "include/linux/pgtable.h ja existe, pulando."
+            echo "selinux_hide.c nao encontrado, pulando"
           fi
 
       - name: Configurar kernel + Otimizações
