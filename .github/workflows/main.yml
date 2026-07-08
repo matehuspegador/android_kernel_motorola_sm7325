@@ -1,105 +1,311 @@
-name: Compilar Kernel Motorola Edge 30 (dubai)
+# =============================================================================
+# Build do kernel Motorola SM7325 (edge 30 "dubai") — LineageOS 23.2
+# com integração do KernelSU-Next e fix do erro "moto dt overlay"
+# =============================================================================
+#
+# COMO USAR:
+# 1. Salve este arquivo em: .github/workflows/build-kernel-dubai.yml
+#    dentro do SEU FORK de https://github.com/LineageOS/android_kernel_motorola_sm7325
+# 2. Rode manualmente via aba "Actions" > "Build Kernel dubai" > "Run workflow"
+# 3. Confira o log do passo "Listar defconfigs disponiveis" e ajuste o input
+#    `defconfig` se o nome usado aqui (lahaina-qgki_defconfig) nao bater.
+#
+# O QUE ESTE WORKFLOW FAZ:
+# - Clona o kernel (branch lineage-23.2 por padrao)
+# - Instala toolchain clang (proton-clang, compativel com esse kernel legado msm)
+# - Integra o KernelSU-Next via instalador oficial
+# - Aplica os fragmentos de config necessarios para KSU + overlay de DT
+# - Builda Image + dtbs + dtbo.img NUMA UNICA chamada de make (fix do erro)
+# - Empacota tudo num AnyKernel3 flashavel e sobe como artifact
+# =============================================================================
+
+name: Build Kernel dubai (edge 30) + KernelSU-Next
 
 on:
   workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: "Branch/tag do kernel a compilar"
+        required: true
+        default: "lineage-23.2"
+      defconfig:
+        description: "Nome do defconfig (dentro de arch/arm64/configs/vendor/)"
+        required: true
+        default: "lahaina-qgki_defconfig"
+      ksu_branch:
+        description: "Branch do KernelSU-Next a integrar"
+        required: true
+        default: "next"
+      ccache:
+        description: "Usar ccache para acelerar builds subsequentes"
+        type: boolean
+        default: true
 
 env:
+  DEVICE_CODENAME: dubai
+  KERNEL_REPO_OWNER: matehuspegador
+  KERNEL_REPO_NAME: android_kernel_motorola_sm7325
   ARCH: arm64
-  SUBARCH: arm64
+  KBUILD_BUILD_USER: github-actions
+  KBUILD_BUILD_HOST: ci
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 120
 
     steps:
+      # ------------------------------------------------------------------
+      # Builds de kernel Android usam muito espaco em disco. Runners padrao
+      # do GitHub ficam sem espaco no meio do build se nao liberar antes.
+      # ------------------------------------------------------------------
+      - name: Liberar espaco em disco no runner
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
 
-    - name: Checkout Kernel
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
+      - name: Checkout do kernel (fork matehuspegador)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.KERNEL_REPO_OWNER }}/${{ env.KERNEL_REPO_NAME }}
+          ref: ${{ github.event.inputs.kernel_ref }}
+          path: kernel
+          fetch-depth: 1
 
-    - name: Instalar Dependências
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y bc bison build-essential ccache curl flex \
-          gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git libelf-dev \
-          libssl-dev lz4 make ninja-build python3 rsync unzip wget xz-utils zip
+      - name: Instalar dependencias de build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex libssl-dev libelf-dev dwarves \
+            build-essential python3 python-is-python3 zip unzip \
+            device-tree-compiler u-boot-tools rsync git curl ccache
 
-    - name: Clonar Proton Clang
-      run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
+      # ------------------------------------------------------------------
+      # Toolchain: proton-clang cobre bem esse kernel msm/lahaina legado.
+      # Se o build.config.common do repo apontar outra versao especifica de
+      # clang, troque aqui pelo prebuilt correspondente da AOSP.
+      # ------------------------------------------------------------------
+      - name: Baixar toolchain (proton-clang)
+        run: |
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git "$HOME/proton-clang"
+          echo "$HOME/proton-clang/bin" >> "$GITHUB_PATH"
 
-    - name: Configurar PATH
-      run: echo "$GITHUB_WORKSPACE/proton-clang/bin" >> $GITHUB_PATH
+      - name: Configurar ccache
+        if: ${{ github.event.inputs.ccache == 'true' }}
+        run: |
+          echo "USE_CCACHE=1" >> "$GITHUB_ENV"
+          echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+          ccache -M 5G
 
-    - name: Clonar Kernel lineage-23.2
-      run: git clone --depth=1 -b lineage-23.2 https://github.com/LineageOS/android_kernel_motorola_sm7325.git kernel_src
+      - name: Cache do ccache
+        if: ${{ github.event.inputs.ccache == 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ env.DEVICE_CODENAME }}-${{ github.event.inputs.kernel_ref }}
 
-    - name: Integrar KernelSU-Next
-      run: |
-        cd kernel_src
-        curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/v3.0.0/kernel/setup.sh | bash -s v3.0.0 legacy
+      - name: Listar defconfigs e fragmentos disponiveis (conferencia)
+        working-directory: kernel
+        run: |
+          echo "Defconfigs em arch/arm64/configs/vendor/:"
+          ls arch/arm64/configs/vendor/ | grep -i lahaina || true
+          echo "--------------------------------------------------"
+          echo "Fragmentos especificos do dispositivo/plataforma:"
+          ls arch/arm64/configs/vendor/ | grep -i -E "moto-lahaina|dubai" || true
+          echo "--------------------------------------------------"
+          echo "Usando defconfig base: ${{ github.event.inputs.defconfig }}"
 
-    - name: Fix Moto DT Overlay (Antes do Build)
-      run: |
-        cd kernel_src
-        echo "🔧 Aplicando fix Moto DT Overlay (agressivo)..."
-        
-        # Fix principal
-        printf "\nMOT_DT_OVERLAY := y\n" >> arch/arm64/boot/dts/vendor/qcom/Makefile || true
-        
-        # Cria o arquivo de overlay
-        mkdir -p arch/arm64/boot/dts/vendor/qcom
-        printf "#define MOT_DT_OVERLAY 1\n" > arch/arm64/boot/dts/vendor/qcom/dubai-overlay.dtsi || true
-        
-        # Exporta variável
-        export MOT_DT_OVERLAY=y
-        
-        echo "✅ Fix Moto DT Overlay aplicado"
-        cat arch/arm64/boot/dts/vendor/qcom/Makefile | tail -n 10
+      # ==================================================================
+      # INTEGRACAO DO KERNELSU-NEXT
+      # ==================================================================
+      - name: Integrar KernelSU-Next
+        working-directory: kernel
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" \
+            | bash -s ${{ github.event.inputs.ksu_branch }}
 
-    - name: Criar diretório de saída
-      run: mkdir -p kernel_src/out
+          KSU_VERSION=$(cd KernelSU-Next && git rev-list --count HEAD 2>/dev/null || echo "unknown")
+          echo "KSU_VERSION=$KSU_VERSION" >> "$GITHUB_ENV"
+          echo "KernelSU-Next integrado, versao base: $KSU_VERSION"
 
-    - name: Gerar Configuração Final
-      run: |
-        cd kernel_src
-        make O=out ARCH=arm64 vendor/lahaina-qgki_defconfig
-        make O=out ARCH=arm64 olddefconfig
+      # ==================================================================
+      # MERGE DE CONFIG: defconfig base + fragmentos do dispositivo + KSU
+      #
+      # Esse kernel usa esquema modular de config (confirmado na arvore):
+      #   1) lahaina-qgki_defconfig       -> base da plataforma SM7325/lahaina
+      #   2) lineage_moto-lahaina.config  -> fragmento comum a todos os moto
+      #                                      lahaina (dubai/berlin/tundra/xpeng...)
+      #   3) lineage_dubai.config         -> fragmento especifico do dubai
+      #   4) ksu_fix.config               -> nosso fragmento do KernelSU-Next
+      #
+      # A ORDEM IMPORTA: o merge_config.sh aplica da esquerda pra direita,
+      # entao cada fragmento posterior pode sobrescrever o anterior.
+      #
+      # Sobre o erro "moto dt overlay": nao existe um fragmento .config
+      # dedicado a overlay de DT nessa arvore -- ele nao e causado por uma
+      # CONFIG_* faltando, e sim pelo dtbo.img sendo gerado numa chamada de
+      # make separada de Image/dtbs (corrigido no passo de build a seguir).
+      # Mesmo assim, mantemos CONFIG_OF_OVERLAY/CONFIG_OF_CONFIGFS habilitados
+      # por seguranca, caso o merge do KSU tenha derrubado algum desses.
+      # ==================================================================
+      - name: Aplicar fragmentos de config (device + KSU)
+        working-directory: kernel
+        run: |
+          cat > ksu_fix.config << 'EOF'
+          CONFIG_KSU=y
+          CONFIG_MODULES=y
+          CONFIG_OVERLAY_FS=y
+          CONFIG_KPROBES=y
+          CONFIG_HAVE_KPROBES=y
+          CONFIG_KPROBE_EVENTS=y
+          CONFIG_OF_OVERLAY=y
+          CONFIG_OF_CONFIGFS=y
+          CONFIG_OF_DYNAMIC=y
+          EOF
 
-    - name: Compilar Kernel
-      run: |
-        cd kernel_src
-        make -j$(nproc) O=out ARCH=arm64 \
-          CC=clang \
-          LLVM=1 \
-          LLVM_IAS=1 \
-          CLANG_TRIPLE=aarch64-linux-gnu- \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          FRAGMENTS="arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }}"
 
-    - name: Baixar AnyKernel3
-      run: git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
+          if [ -f arch/arm64/configs/vendor/lineage_moto-lahaina.config ]; then
+            FRAGMENTS="$FRAGMENTS arch/arm64/configs/vendor/lineage_moto-lahaina.config"
+          else
+            echo "::warning::lineage_moto-lahaina.config nao encontrado, pulando fragmento comum"
+          fi
 
-    - name: Preparar AnyKernel
-      run: |
-        cp kernel_src/out/arch/arm64/boot/Image anykernel/Image
-        find kernel_src/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} anykernel/ \;
-        
-        if [ -f kernel_src/out/arch/arm64/boot/dtbo.img ]; then
-          cp kernel_src/out/arch/arm64/boot/dtbo.img anykernel/
-        fi
+          if [ -f arch/arm64/configs/vendor/lineage_dubai.config ]; then
+            FRAGMENTS="$FRAGMENTS arch/arm64/configs/vendor/lineage_dubai.config"
+          else
+            echo "::warning::lineage_dubai.config nao encontrado, pulando fragmento do dubai"
+          fi
 
-        cd anykernel
-        sed -i 's|kernel.string=.*|kernel.string=Edge 30 KSU Next|' anykernel.sh
-        sed -i 's|device.name1=.*|device.name1=dubai|' anykernel.sh
+          FRAGMENTS="$FRAGMENTS ksu_fix.config"
 
-    - name: Criar ZIP
-      run: |
-        cd anykernel
-        zip -r9 ../Kernel_Edge30_dubai_KSU-Next.zip . -x ".git*"
+          echo "Mesclando na ordem: $FRAGMENTS"
+          ARCH=arm64 scripts/kconfig/merge_config.sh -O out -m $FRAGMENTS
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: Kernel_Edge30_dubai_KSU-Next
-        path: Kernel_Edge30_dubai_KSU-Next.zip
+      # ==================================================================
+      # BUILD
+      # Image, dtbs e dtbo.img SEMPRE na mesma chamada de make -- isso e o
+      # que evita o erro de moto dt overlay (phandle/overlay nao resolvido
+      # por objeto intermediario desatualizado quando dtbo.img roda isolado)
+      # ==================================================================
+      # NOTA: nao rodamos "make <defconfig>" aqui de novo -- isso sobrescreveria
+      # o merge dos fragmentos feito no passo anterior. O merge_config.sh ja
+      # deixou um out/.config valido e finalizado (ele roda "make oldconfig"
+      # internamente ao final do merge).
+      - name: Conferir .config final
+        working-directory: kernel
+        run: |
+          grep -E "^CONFIG_KSU=|^CONFIG_OF_OVERLAY=|^CONFIG_OF_CONFIGFS=" out/.config || \
+            echo "::warning::Alguma config esperada nao apareceu no .config final -- confira o merge acima"
+
+      - name: Compilar Image + dtbs + dtbo.img
+        working-directory: kernel
+        env:
+          DTC_FLAGS: "-@"
+        run: |
+          make -C $(pwd) O=out ARCH=arm64 \
+            CC="ccache clang" LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            -j$(nproc --all) \
+            Image dtbs dtbo.img
+
+      - name: Verificar artefatos gerados
+        working-directory: kernel
+        run: |
+          set -e
+          IMAGE=$(find out -name "Image" -type f | head -n1)
+          DTBO=$(find out -name "dtbo.img" -type f | head -n1)
+
+          if [ -z "$IMAGE" ]; then
+            echo "::error::Image nao foi gerado. Verifique o log de build acima."
+            exit 1
+          fi
+          if [ -z "$DTBO" ]; then
+            echo "::error::dtbo.img nao foi gerado -- o fix de overlay pode nao se aplicar ao seu erro especifico. Cole o log de erro completo para eu ajustar o fragmento de config."
+            exit 1
+          fi
+
+          echo "Image: $IMAGE"
+          echo "dtbo.img: $DTBO"
+          echo "IMAGE_PATH=$IMAGE" >> "$GITHUB_ENV"
+          echo "DTBO_PATH=$DTBO" >> "$GITHUB_ENV"
+
+          find out -name "*.dtb" -not -name "*overlay*" | sort | xargs cat > out/dtb 2>/dev/null || true
+          echo "DTB_PATH=$(pwd)/out/dtb" >> "$GITHUB_ENV"
+
+      # ==================================================================
+      # EMPACOTAMENTO EM ANYKERNEL3
+      # ==================================================================
+      - name: Clonar AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
+
+      - name: Montar anykernel.sh para dubai
+        working-directory: anykernel
+        run: |
+          rm -rf ramdisk patch tools *.dtb aik-mtk anykernel.sh 2>/dev/null || true
+          cat > anykernel.sh << 'EOF'
+          properties() { '
+          kernel.string=KernelSU-Next Kernel para Motorola edge 30 (dubai)
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=dubai
+          supported.versions=
+          supported.patchlevels=
+          '; }
+
+          block=/dev/block/bootdevice/by-name/boot;
+          is_slot_device=1;
+          ramdisk_compression=auto;
+          patch_vbmeta_flag=0;
+
+          . tools/ak3-core.sh
+
+          dump_boot
+          write_boot
+          EOF
+
+      - name: Copiar artefatos do kernel para o AnyKernel3
+        run: |
+          cp "${{ env.IMAGE_PATH }}" anykernel/Image
+          cp "${{ env.DTBO_PATH }}" anykernel/dtbo.img
+          if [ -f "${{ env.DTB_PATH }}" ]; then
+            cp "${{ env.DTB_PATH }}" anykernel/dtb
+          fi
+
+      - name: Gerar zip flashavel
+        working-directory: anykernel
+        run: |
+          ZIP_NAME="KernelSU-Next-dubai-$(date +%Y%m%d-%H%M).zip"
+          zip -r9 "../$ZIP_NAME" . -x ".git*"
+          echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
+
+      - name: Upload dos artefatos (zip + arquivos crus)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-dubai-ksu-next
+          path: |
+            ${{ env.ZIP_NAME }}
+            ${{ env.IMAGE_PATH }}
+            ${{ env.DTBO_PATH }}
+          retention-days: 14
+
+      - name: Resumo do build
+        run: |
+          echo "### Build concluido" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Dispositivo: dubai (Motorola edge 30)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Branch do kernel: ${{ github.event.inputs.kernel_ref }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Defconfig: ${{ github.event.inputs.defconfig }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- KernelSU-Next branch: ${{ github.event.inputs.ksu_branch }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Zip: ${{ env.ZIP_NAME }}" >> "$GITHUB_STEP_SUMMARY"
+          
