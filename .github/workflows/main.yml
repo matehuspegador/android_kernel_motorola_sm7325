@@ -26,8 +26,7 @@ jobs:
           libssl-dev lz4 make ninja-build python3 rsync unzip wget xz-utils zip
 
     - name: Clonar Proton Clang
-      run: |
-        git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
+      run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
 
     - name: Configurar PATH
       run: echo "$GITHUB_WORKSPACE/proton-clang/bin" >> $GITHUB_PATH
@@ -40,15 +39,23 @@ jobs:
         cd kernel_src
         curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/v3.0.0/kernel/setup.sh | bash -s v3.0.0 legacy
 
-    - name: Fix Moto DT Overlay
+    - name: Fix Moto DT Overlay (Antes do Build)
       run: |
         cd kernel_src
-        echo "🔧 Fix Moto DT Overlay..."
+        echo "🔧 Aplicando fix Moto DT Overlay (agressivo)..."
+        
+        # Fix principal
         printf "\nMOT_DT_OVERLAY := y\n" >> arch/arm64/boot/dts/vendor/qcom/Makefile || true
+        
+        # Cria o arquivo de overlay
         mkdir -p arch/arm64/boot/dts/vendor/qcom
         printf "#define MOT_DT_OVERLAY 1\n" > arch/arm64/boot/dts/vendor/qcom/dubai-overlay.dtsi || true
+        
+        # Exporta variável
         export MOT_DT_OVERLAY=y
-        echo "✅ Moto DT Overlay fix aplicado"
+        
+        echo "✅ Fix Moto DT Overlay aplicado"
+        cat arch/arm64/boot/dts/vendor/qcom/Makefile | tail -n 10
 
     - name: Criar diretório de saída
       run: mkdir -p kernel_src/out
@@ -56,12 +63,7 @@ jobs:
     - name: Gerar Configuração Final
       run: |
         cd kernel_src
-        scripts/kconfig/merge_config.sh \
-          -m \
-          -O out \
-          arch/arm64/configs/vendor/lahaina-qgki_defconfig \
-          arch/arm64/configs/vendor/lineage_dubai.config
-
+        make O=out ARCH=arm64 vendor/lahaina-qgki_defconfig
         make O=out ARCH=arm64 olddefconfig
 
     - name: Compilar Kernel
@@ -81,12 +83,8 @@ jobs:
     - name: Preparar AnyKernel
       run: |
         cp kernel_src/out/arch/arm64/boot/Image anykernel/Image
+        find kernel_src/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} anykernel/ \;
         
-        # DTBs
-        mkdir -p anykernel/dts/vendor/qcom
-        find kernel_src/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} anykernel/dts/vendor/qcom/ \;
-        
-        # DTBO
         if [ -f kernel_src/out/arch/arm64/boot/dtbo.img ]; then
           cp kernel_src/out/arch/arm64/boot/dtbo.img anykernel/
         fi
