@@ -60,7 +60,7 @@ jobs:
         run: |
           cd "$KERNEL_DIR"
           if [ "${{ github.event.inputs.kernelsu_variant }}" = "KernelSU-Next (fork da comunidade)" ]; then
-            echo "Instalando KernelSU-Next v3.0.0..."
+            echo "Instalando KernelSU-Next..."
             curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/v3.0.0/kernel/setup.sh | bash -s v3.0.0 legacy
           else
             echo "Instalando KernelSU oficial..."
@@ -72,23 +72,32 @@ jobs:
           cd "$KERNEL_DIR"
           FILE=$(find drivers/kernelsu -name "pkg_observer.c" 2>/dev/null | head -n1)
           if [ -n "$FILE" ]; then
-            echo "🔧 Corrigindo fsnotify_ops em $FILE"
+            echo "🔧 Corrigindo fsnotify_ops com printf..."
             cp "$FILE" "$FILE.bak"
             
-            # Remove declaração antiga se existir
-            sed -i '/static const struct fsnotify_ops ksu_fsnotify_ops = {/,/};/d' "$FILE"
-            
-            # Adiciona versão compatível usando printf
-            printf '\nstatic int ksu_handle_inode_event(struct fsnotify_mark *mark, u32 mask,\n' >> "$FILE"
+            printf 'static int ksu_handle_inode_event(struct fsnotify_mark *mark, u32 mask,\n' >> "$FILE"
             printf '                                  struct inode *inode, struct inode *dir,\n' >> "$FILE"
             printf '                                  const struct qstr *name, u32 cookie)\n' >> "$FILE"
-            printf '{\n    return 0;\n}\n\n' >> "$FILE"
+            printf '{\n' >> "$FILE"
+            printf '    return 0;\n' >> "$FILE"
+            printf '}\n\n' >> "$FILE"
             printf 'static const struct fsnotify_ops ksu_fsnotify_ops = {\n' >> "$FILE"
             printf '    .handle_event = ksu_handle_inode_event,\n' >> "$FILE"
             printf '};\n' >> "$FILE"
             
-            echo "✅ fsnotify_ops corrigido para kernel 5.4!"
+            # Remove declaração antiga se existir
+            sed -i '/static const struct fsnotify_ops ksu_fsnotify_ops = {/,/};/d' "$FILE"
+            
+            echo "✅ fsnotify_ops corrigido com printf!"
           fi
+
+      - name: Fix Moto DT Overlay Error
+        run: |
+          cd "$KERNEL_DIR"
+          echo "Fixing Moto DT overlay with printf..."
+          printf "MOT_DT_OVERLAY := y\n" >> arch/arm64/boot/dts/vendor/qcom/Makefile || true
+          printf "#define MOT_DT_OVERLAY 1\n" >> arch/arm64/boot/dts/vendor/qcom/dubai-overlay.dtsi 2>/dev/null || true
+          echo "✅ Moto DT Overlay fix aplicado"
 
       - name: Corrigir allowlist.c
         run: |
@@ -97,14 +106,15 @@ jobs:
           if [ -f "$FILE" ]; then
             sed -i 's/TWA_RESUME/true/g' "$FILE"
             grep -q "#include <linux/sched/task.h>" "$FILE" || sed -i '1i #include <linux/sched/task.h>' "$FILE"
-            echo "✅ allowlist.c corrigido"
           fi
 
       - name: Configurar kernel (dubai + FPS)
         run: |
           cd "$KERNEL_DIR"
           make O=../$OUT_DIR ARCH=arm64 vendor/lahaina-qgki_defconfig
-          ./scripts/kconfig/merge_config.sh -O ../$OUT_DIR ../$OUT_DIR/.config ../configs/fps_optimizations.config 2>/dev/null || true
+          ./scripts/kconfig/merge_config.sh -O ../$OUT_DIR \
+            ../$OUT_DIR/.config \
+            ../configs/fps_optimizations.config 2>/dev/null || true
           make O=../$OUT_DIR ARCH=arm64 olddefconfig
 
       - name: Compilar Kernel
@@ -124,7 +134,7 @@ jobs:
           IMG=$(find $OUT_DIR -name "Image.gz-dtb" -o -name "Image" | head -n1)
           if [ -z "$IMG" ]; then
             echo "❌ Build falhou!"
-            tail -n 100 build.log
+            tail -n 150 build.log
             exit 1
           fi
           git clone --depth=1 $ANYKERNEL_REPO anykernel
