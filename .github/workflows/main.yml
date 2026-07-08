@@ -1,23 +1,15 @@
-name: Build sm7325 Kernel 5.4 - LineageOS 23.2 (FPS + KernelSU)
+name: Build Kernel 5.4 Dubai (lineage-23.2)
 
 on:
   workflow_dispatch:
     inputs:
-      kernel_branch:
-        description: "Branch do kernel"
-        required: true
-        default: "lineage-23.2"
-      device_codename:
-        description: "Codinome do dispositivo"
-        required: true
-        default: "dubai"
       kernelsu_variant:
         description: "KernelSU Variant"
         type: choice
         options:
-          - "tiann/KernelSU (oficial)"
-          - "KernelSU-Next (fork da comunidade)"
-        default: "KernelSU-Next (fork da comunidade)"
+          - "KernelSU-Next"
+          - "KernelSU oficial"
+        default: "KernelSU-Next"
 
 env:
   KERNEL_REPO: https://github.com/LineageOS/android_kernel_motorola_sm7325.git
@@ -30,13 +22,8 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout repositório
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Liberar espaço
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune -a -f
 
       - name: Instalar dependências
         run: |
@@ -49,104 +36,60 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-sm7325-23.2-${{ github.sha }}
+          key: ccache-sm7325-dubai-${{ github.sha }}
 
-      - name: Clonar kernel LineageOS 23.2
-        run: git clone --depth=1 -b "${{ github.event.inputs.kernel_branch }}" "$KERNEL_REPO" "$KERNEL_DIR"
+      - name: Clonar Kernel
+        run: git clone --depth=1 -b lineage-23.2 "$KERNEL_REPO" "$KERNEL_DIR"
 
       - name: Baixar Proton Clang
         run: |
           mkdir -p clang
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-          echo "✅ Proton Clang configurado!"
-
-      - name: Aplicar patches (pasta patches/)
-        run: |
-          cd "$KERNEL_DIR"
-          git config user.email "ci@localhost"
-          git config user.name "CI Bot"
-          
-          if [ -d "../patches" ] && [ "$(ls ../patches/*.patch 2>/dev/null)" ]; then
-            for p in $(ls ../patches/*.patch | sort); do
-              echo "Aplicando: $(basename $p)"
-              if git am --3way "$p" 2>/dev/null; then
-                echo "   ✅ Sucesso"
-              elif git apply --ignore-whitespace --reject --whitespace=fix "$p" 2>/dev/null; then
-                echo "   ✅ Sucesso (apply)"
-              else
-                echo "   ⚠️ Falhou (continuando)"
-              fi
-            done
-          fi
 
       - name: Integrar KernelSU
         run: |
           cd "$KERNEL_DIR"
-          if [ "${{ github.event.inputs.kernelsu_variant }}" = "KernelSU-Next (fork da comunidade)" ]; then
-            curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh | bash -s --
+          if [ "${{ github.event.inputs.kernelsu_variant }}" = "KernelSU-Next" ]; then
+            curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/v3.0.0/kernel/setup.sh | bash -s v3.0.0 legacy
           else
             curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s --
           fi
 
-      - name: Configurar kernel + Otimizações
+      - name: Configurar Kernel
         run: |
           cd "$KERNEL_DIR"
-          make O=../$OUT_DIR ARCH=arm64 \
-            vendor/lahaina-qgki_defconfig \
-            vendor/lineage_moto-lahaina.config \
-            vendor/lineage_dubai.config
-
-          ./scripts/config --file ../$OUT_DIR/.config \
-            -e CONFIG_KSU \
-            -e CONFIG_KPROBES \
-            -e CONFIG_HAVE_KPROBES \
-            -e CONFIG_KPROBE_EVENTS \
-            -e CONFIG_CPU_FREQ_GOV_SCHEDUTIL \
-            -e CONFIG_HZ_300 \
-            -e CONFIG_ZRAM \
-            -e CONFIG_ZRAM_DEF_COMP_LZ4 \
-            -e CONFIG_TRANSPARENT_HUGEPAGE \
-            -e CONFIG_IOSCHED_BFQ \
-            -e CONFIG_DRM_MSM_ADRENO_6XX \
-            -e CONFIG_MSM_ADRENO_BOOST \
-            -d CONFIG_DEBUG_KERNEL \
-            -d CONFIG_FTRACE
-
-      - name: Compilar Kernel
-        run: |
-          cd "$KERNEL_DIR"
+          make O=../$OUT_DIR ARCH=arm64 vendor/lahaina-qgki_defconfig
           make O=../$OUT_DIR ARCH=arm64 olddefconfig
-          
+
+      - name: Compilar
+        run: |
+          cd "$KERNEL_DIR"
           make -j$(nproc) O=../$OUT_DIR ARCH=arm64 \
             CC="ccache clang" \
             LLVM=1 \
             LLVM_IAS=0 \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            KCFLAGS="-O2" \
-            2>&1 | tee build.log
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- 2>&1 | tee build.log
 
-      - name: Empacotar AnyKernel3
+      - name: Empacotar
         run: |
-          IMG=$(find $OUT_DIR -name "Image*" | head -n1)
+          IMG=$(find $OUT_DIR -name "Image.gz-dtb" -o -name "Image" | head -n1)
           if [ -z "$IMG" ]; then
             echo "Build falhou!"
-            tail -n 200 build.log
+            tail -n 100 build.log
             exit 1
           fi
-          
           git clone --depth=1 $ANYKERNEL_REPO anykernel
-          cp $IMG anykernel/
+          cp "$IMG" anykernel/
           find $OUT_DIR -name "*.dtb" -exec cp {} anykernel/ \;
-          
           cd anykernel
-          zip -r9 "../dubai-kernel-23.2-fps-ksu-$(date +%Y%m%d-%H%M).zip" . -x ".git*"
+          zip -r9 "../dubai-kernel-5.4-ksu-$(date +%Y%m%d-%H%M).zip" . -x ".git*"
 
-      - name: Upload Artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-dubai-23.2-fps-ksu
+          name: dubai-kernel-5.4-ksu
           path: "*.zip"
           retention-days: 14
