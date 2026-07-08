@@ -17,7 +17,7 @@ on:
         options:
           - "tiann/KernelSU (oficial)"
           - "KernelSU-Next (fork da comunidade)"
-        default: "KernelSU-Next (fork da comunidade)"  # Recomendado para 5.4
+        default: "tiann/KernelSU (oficial)"
 
 env:
   KERNEL_REPO: https://github.com/LineageOS/android_kernel_motorola_sm7325.git
@@ -92,42 +92,28 @@ jobs:
         run: |
           cd "$KERNEL_DIR"
           if [ "${{ github.event.inputs.kernelsu_variant }}" = "KernelSU-Next (fork da comunidade)" ]; then
-            echo "Instalando KernelSU-Next (melhor suporte legacy)..."
+            echo "Instalando KernelSU-Next..."
             curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/v3.0.0/kernel/setup.sh | bash -s v3.0.0 legacy
           else
             echo "Instalando KernelSU oficial..."
             curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s --
           fi
 
-      - name: Corrigir compatibilidade linux/pgtable.h
-        run: |
-          cd "$KERNEL_DIR"
-          if [ ! -f include/linux/pgtable.h ]; then
-            mkdir -p include/linux
-            cat > include/linux/pgtable.h << 'EOF'
-          #ifndef _LINUX_PGTABLE_H
-          #define _LINUX_PGTABLE_H
-          #include <asm/pgtable.h>
-          #endif
-          EOF
-          fi
-
-      - name: Corrigir pkg_observer.c (fsnotify kernel 5.4)
+      - name: Patch completo para KernelSU 5.4 (fsnotify)
         run: |
           cd "$KERNEL_DIR"
           FILE=$(find drivers/kernelsu -name "pkg_observer.c" 2>/dev/null | head -n1)
           if [ -n "$FILE" ]; then
-            echo "Aplicando correção completa em $FILE"
-            cp "$FILE" "${FILE}.bak"
+            echo "Aplicando patch em $FILE"
+            cp "$FILE" "$FILE.bak"
             
-            # Remove handle_inode_event incompatível
+            # Remove linha problemática
             sed -i '/\.handle_inode_event = ksu_handle_inode_event,/d' "$FILE"
             
-            # Adiciona handle_event compatível com 5.4
-            sed -i '/static const struct fsnotify_ops ksu_fsnotify_ops = {/a \
-            \t.handle_event = ksu_handle_inode_event,' "$FILE"
+            # Adiciona handler correto para kernel 5.4
+            sed -i '/static const struct fsnotify_ops ksu_fsnotify_ops = {/a \    .handle_event = ksu_handle_inode_event,' "$FILE"
             
-            echo "=== fsnotify_ops após correção ==="
+            echo "--- Verificação final ---"
             grep -A15 "fsnotify_ops" "$FILE"
           fi
 
@@ -143,7 +129,20 @@ jobs:
             echo "allowlist.c corrigido"
           fi
 
-      - name: Configurar kernel + Otimizações FPS
+      - name: Corrigir compatibilidade linux/pgtable.h
+        run: |
+          cd "$KERNEL_DIR"
+          if [ ! -f include/linux/pgtable.h ]; then
+            mkdir -p include/linux
+            cat > include/linux/pgtable.h << 'EOF'
+          #ifndef _LINUX_PGTABLE_H
+          #define _LINUX_PGTABLE_H
+          #include <asm/pgtable.h>
+          #endif
+          EOF
+          fi
+
+      - name: Configurar kernel + Otimizações
         run: |
           cd "$KERNEL_DIR"
           make O=../$OUT_DIR ARCH=arm64 \
@@ -160,7 +159,6 @@ jobs:
       - name: Compilar Kernel
         run: |
           cd "$KERNEL_DIR"
-          echo "Iniciando compilação..."
           make -j$(nproc) O=../$OUT_DIR ARCH=arm64 \
             CC="ccache clang" \
             LLVM=1 \
