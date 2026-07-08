@@ -1,90 +1,107 @@
-name: Compilar Kernel Motorola Edge 30 (dubai) - lineage-23.2
+name: Compilar Kernel Motorola Edge 30 (dubai)
 
 on:
   workflow_dispatch:
 
 env:
   ARCH: arm64
-  KERNEL_REPO: https://github.com/LineageOS/android_kernel_motorola_sm7325.git
+  SUBARCH: arm64
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout Kernel
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      - name: Instalar Dependências
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex git \
-            libelf-dev libssl-dev lz4 make python3 rsync unzip wget zip
+    - name: Checkout Kernel
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
 
-      - name: Clonar Kernel (lineage-23.2)
-        run: git clone --depth=1 -b lineage-23.2 "$KERNEL_REPO" kernel_src
+    - name: Instalar Dependências
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc bison build-essential ccache curl flex \
+          gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git libelf-dev \
+          libssl-dev lz4 make ninja-build python3 rsync unzip wget xz-utils zip
 
-      - name: Clonar Proton Clang
-        run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
+    - name: Clonar Proton Clang
+      run: |
+        git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
 
-      - name: Configurar PATH
-        run: echo "$GITHUB_WORKSPACE/proton-clang/bin" >> $GITHUB_PATH
+    - name: Configurar PATH
+      run: echo "$GITHUB_WORKSPACE/proton-clang/bin" >> $GITHUB_PATH
 
-      - name: Integrar KernelSU-Next
-        run: |
-          cd kernel_src
-          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/v3.0.0/kernel/setup.sh | bash -s v3.0.0 legacy
+    - name: Clonar Kernel lineage-23.2
+      run: git clone --depth=1 -b lineage-23.2 https://github.com/LineageOS/android_kernel_motorola_sm7325.git kernel_src
 
-      - name: Configurar Kernel
-        run: |
-          cd kernel_src
-          mkdir -p out
-          make O=out ARCH=arm64 vendor/lahaina-qgki_defconfig
-          make O=out ARCH=arm64 olddefconfig
+    - name: Integrar KernelSU-Next
+      run: |
+        cd kernel_src
+        curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/v3.0.0/kernel/setup.sh | bash -s v3.0.0 legacy
 
-      - name: Compilar Kernel
-        run: |
-          cd kernel_src
-          make -j$(nproc) O=out ARCH=arm64 \
-            CC=clang \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+    - name: Fix Moto DT Overlay
+      run: |
+        cd kernel_src
+        echo "🔧 Fix Moto DT Overlay..."
+        printf "\nMOT_DT_OVERLAY := y\n" >> arch/arm64/boot/dts/vendor/qcom/Makefile || true
+        mkdir -p arch/arm64/boot/dts/vendor/qcom
+        printf "#define MOT_DT_OVERLAY 1\n" > arch/arm64/boot/dts/vendor/qcom/dubai-overlay.dtsi || true
+        export MOT_DT_OVERLAY=y
+        echo "✅ Moto DT Overlay fix aplicado"
 
-      - name: Baixar AnyKernel3
-        run: git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
+    - name: Criar diretório de saída
+      run: mkdir -p kernel_src/out
 
-      - name: Preparar AnyKernel
-        run: |
-          cp kernel_src/out/arch/arm64/boot/Image anykernel/
-          
-          # Copia DTBs
-          mkdir -p anykernel/dts
-          find kernel_src/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} anykernel/dts/ \;
-          
-          # Importante: DTBO
-          if [ -f kernel_src/out/arch/arm64/boot/dtbo.img ]; then
-            cp kernel_src/out/arch/arm64/boot/dtbo.img anykernel/
-            echo "dtbo.img copiado do build"
-          else
-            echo "Aviso: dtbo.img não encontrado no build"
-          fi
-          
-          cd anykernel
-          sed -i 's|kernel.string=.*|kernel.string=Edge 30 KSU Next|' anykernel.sh
-          sed -i 's|device.name1=.*|device.name1=dubai|' anykernel.sh
-          
-      - name: Criar ZIP
-        run: |
-          cd anykernel
-          zip -r9 ../Kernel_Edge30_dubai_KSU-Next.zip . -x ".git*"
+    - name: Gerar Configuração Final
+      run: |
+        cd kernel_src
+        scripts/kconfig/merge_config.sh \
+          -m \
+          -O out \
+          arch/arm64/configs/vendor/lahaina-qgki_defconfig \
+          arch/arm64/configs/vendor/lineage_dubai.config
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Kernel_Edge30_dubai_KSU-Next
-          path: Kernel_Edge30_dubai_KSU-Next.zip
+        make O=out ARCH=arm64 olddefconfig
+
+    - name: Compilar Kernel
+      run: |
+        cd kernel_src
+        make -j$(nproc) O=out ARCH=arm64 \
+          CC=clang \
+          LLVM=1 \
+          LLVM_IAS=1 \
+          CLANG_TRIPLE=aarch64-linux-gnu- \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+    - name: Baixar AnyKernel3
+      run: git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
+
+    - name: Preparar AnyKernel
+      run: |
+        cp kernel_src/out/arch/arm64/boot/Image anykernel/Image
+        
+        # DTBs
+        mkdir -p anykernel/dts/vendor/qcom
+        find kernel_src/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} anykernel/dts/vendor/qcom/ \;
+        
+        # DTBO
+        if [ -f kernel_src/out/arch/arm64/boot/dtbo.img ]; then
+          cp kernel_src/out/arch/arm64/boot/dtbo.img anykernel/
+        fi
+
+        cd anykernel
+        sed -i 's|kernel.string=.*|kernel.string=Edge 30 KSU Next|' anykernel.sh
+        sed -i 's|device.name1=.*|device.name1=dubai|' anykernel.sh
+
+    - name: Criar ZIP
+      run: |
+        cd anykernel
+        zip -r9 ../Kernel_Edge30_dubai_KSU-Next.zip . -x ".git*"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Kernel_Edge30_dubai_KSU-Next
+        path: Kernel_Edge30_dubai_KSU-Next.zip
