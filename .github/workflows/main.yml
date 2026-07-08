@@ -167,6 +167,11 @@ jobs:
           CONFIG_OF_OVERLAY=y
           CONFIG_OF_CONFIGFS=y
           CONFIG_OF_DYNAMIC=y
+          # Kernel 5.4 = faixa GKI 1.0 (4.19-5.4): o hook do KernelSU-Next
+          # precisa resolver simbolos do kernel em runtime via kallsyms,
+          # sem isso o driver nao encontra os pontos de hook.
+          CONFIG_KALLSYMS=y
+          CONFIG_KALLSYMS_ALL=y
           EOF
 
           FRAGMENTS="arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }}"
@@ -190,9 +195,12 @@ jobs:
 
       # ==================================================================
       # BUILD
-      # Image, dtbs e dtbo.img SEMPRE na mesma chamada de make -- isso e o
-      # que evita o erro de moto dt overlay (phandle/overlay nao resolvido
-      # por objeto intermediario desatualizado quando dtbo.img roda isolado)
+      # Estrategia em 3 passos pra cobrir os dois cenarios mais comuns de
+      # "moto dt overlay" em kernel 5.4 (msm-4.19/5.4 antigo da QCOM):
+      #   1) Image + dtbs (obrigatorio, gera os .dtbo junto dos .dtb)
+      #   2) tenta "make dtbo.img" (existe em algumas arvores, nao em outras)
+      #   3) se o alvo do kbuild nao existir/falhar, empacota manualmente
+      #      com mkdtboimg.py (ferramenta oficial da AOSP)
       # ==================================================================
       # NOTA: nao rodamos "make <defconfig>" aqui de novo -- isso sobrescreveria
       # o merge dos fragmentos feito no passo anterior. O merge_config.sh ja
@@ -204,7 +212,9 @@ jobs:
           grep -E "^CONFIG_KSU=|^CONFIG_OF_OVERLAY=|^CONFIG_OF_CONFIGFS=" out/.config || \
             echo "::warning::Alguma config esperada nao apareceu no .config final -- confira o merge acima"
 
-      - name: Compilar Image + dtbs + dtbo.img
+      # Image + dtbs sao obrigatorios -- se isso falhar, o build para aqui
+      # mesmo (comportamento padrao do GitHub Actions com bash, -e implicito).
+      - name: Compilar Image + dtbs
         working-directory: kernel
         env:
           DTC_FLAGS: "-@"
@@ -214,7 +224,51 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             -j$(nproc --all) \
-            Image dtbs dtbo.img
+            Image dtbs
+
+      # ------------------------------------------------------------------
+      # Kernel 5.4 = faixa msm-4.19/5.4 antiga da QCOM. Nessa faixa e comum
+      # o kbuild NAO ter o alvo "dtbo.img" cabeado (o pacote costumava ser
+      # feito por fora com a ferramenta mkdtboimg). Se for esse o caso, o
+      # erro de compilacao e algo como "No rule to make target 'dtbo.img'".
+      # Por isso: tentamos o alvo do kbuild primeiro (sem derrubar o step
+      # se ele nao existir) e caimos pro empacotamento manual se preciso.
+      # ------------------------------------------------------------------
+      - name: Tentar dtbo.img via kbuild
+        working-directory: kernel
+        env:
+          DTC_FLAGS: "-@"
+        run: |
+          make -C $(pwd) O=out ARCH=arm64 \
+            CC="ccache clang" LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            -j$(nproc --all) \
+            dtbo.img || echo "Alvo dtbo.img do kbuild falhou ou nao existe -- vamos tentar empacotar manualmente."
+
+      - name: Empacotar dtbo.img manualmente (fallback com mkdtboimg.py)
+        working-directory: kernel
+        run: |
+          if [ -f out/arch/arm64/boot/dtbo.img ]; then
+            echo "dtbo.img ja foi gerado pelo kbuild, pulando fallback."
+            exit 0
+          fi
+
+          echo "Baixando mkdtboimg.py (ferramenta oficial da AOSP/libufdt)..."
+          curl -LSs -o mkdtboimg.py \
+            "https://android.googlesource.com/platform/system/libufdt/+/refs/heads/main/utils/src/mkdtboimg.py?format=TEXT"
+          base64 -d mkdtboimg.py > mkdtboimg.py.tmp && mv mkdtboimg.py.tmp mkdtboimg.py
+          chmod +x mkdtboimg.py
+
+          DTBO_FILES=$(find out -name "*.dtbo" | sort)
+          if [ -z "$DTBO_FILES" ]; then
+            echo "::error::Nenhum .dtbo foi gerado por 'make dtbs'. Isso indica que os overlays da Motorola nao estao sendo compilados -- provavelmente falta algum fragmento de config ou o target dtbs precisa de uma variavel extra (ex: DTC_OVERLAY_TEST_EXT). Cole o log completo do passo 'Compilar Image + dtbs' para eu ajustar."
+            exit 1
+          fi
+
+          echo "Empacotando dtbo.img a partir de:"
+          echo "$DTBO_FILES"
+          python3 mkdtboimg.py create out/arch/arm64/boot/dtbo.img $DTBO_FILES
 
       - name: Verificar artefatos gerados
         working-directory: kernel
@@ -228,7 +282,7 @@ jobs:
             exit 1
           fi
           if [ -z "$DTBO" ]; then
-            echo "::error::dtbo.img nao foi gerado -- o fix de overlay pode nao se aplicar ao seu erro especifico. Cole o log de erro completo para eu ajustar o fragmento de config."
+            echo "::error::dtbo.img nao foi gerado nem pelo kbuild nem pelo fallback manual. Cole o log completo dos passos de dtbo para eu ajustar o fix."
             exit 1
           fi
 
