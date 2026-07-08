@@ -59,7 +59,7 @@ jobs:
           mkdir -p clang
           echo "Baixando Proton Clang (kdrag0n)..."
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
-          
+
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
           echo "✅ Proton Clang configurado!"
           ls -la clang/bin/ | grep -E "clang$|aarch64" | head -n 5
@@ -69,10 +69,10 @@ jobs:
           cd "$KERNEL_DIR"
           git config user.email "ci@localhost"
           git config user.name "CI Bot"
-          
+
           if [ -d "../patches" ] && [ "$(ls ../patches/*.patch 2>/dev/null)" ]; then
             for p in $(ls ../patches/*.patch | sort); do
-              echo "Aplicando: $(basename $p)"
+              echo "Aplicando: $(basename "$p")"
               if git am --3way "$p" 2>/dev/null; then
                 echo "   ✅ Sucesso"
               elif git apply --ignore-whitespace --reject --whitespace=fix "$p" 2>/dev/null; then
@@ -81,6 +81,21 @@ jobs:
                 echo "   ⚠️ Falhou (continuando)"
               fi
             done
+          fi
+
+          echo "--- Arquivos .rej encontrados ---"
+          find . -name "*.rej" -exec echo {} \; -exec cat {} \;
+
+      - name: Corrigir bug de ordem de argumentos em task_mmu.c
+        run: |
+          cd "$KERNEL_DIR"
+          FILE="fs/proc/task_mmu.c"
+          if grep -q "split_huge_pmd(vma, addr, pmd);" "$FILE"; then
+            echo "🔧 Corrigindo ordem de argumentos em split_huge_pmd()..."
+            sed -i 's/split_huge_pmd(vma, addr, pmd);/split_huge_pmd(vma, pmd, addr);/' "$FILE"
+            echo "✅ Corrigido: split_huge_pmd(vma, pmd, addr);"
+          else
+            echo "ℹ️ Padrão não encontrado (já corrigido ou linha diferente), pulando."
           fi
 
       - name: Integrar KernelSU
@@ -122,7 +137,7 @@ jobs:
         run: |
           cd "$KERNEL_DIR"
           make O=../$OUT_DIR ARCH=arm64 olddefconfig
-          
+
           echo "Iniciando compilação..."
           make -j$(nproc) O=../$OUT_DIR ARCH=arm64 \
             CC="ccache clang" \
@@ -142,11 +157,11 @@ jobs:
             tail -n 100 build.log
             exit 1
           fi
-          
+
           git clone --depth=1 $ANYKERNEL_REPO anykernel
-          cp $IMG anykernel/
+          cp "$IMG" anykernel/
           find $OUT_DIR -name "*.dtb" -exec cp {} anykernel/ \;
-          
+
           cd anykernel
           zip -r9 "../dubai-kernel-5.4-fps-ksu-$(date +%Y%m%d-%H%M).zip" . -x ".git*"
 
