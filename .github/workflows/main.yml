@@ -1,95 +1,79 @@
-name: Build Kernel 5.4 Dubai (lineage-23.2)
+name: Compilar Kernel Motorola Edge 30 (dubai) - lineage-23.2
 
 on:
   workflow_dispatch:
-    inputs:
-      kernelsu_variant:
-        description: "KernelSU Variant"
-        type: choice
-        options:
-          - "KernelSU-Next"
-          - "KernelSU oficial"
-        default: "KernelSU-Next"
 
 env:
-  KERNEL_REPO: https://github.com/LineageOS/android_kernel_motorola_sm7325.git
-  KERNEL_DIR: kernel_src
-  OUT_DIR: out
   ARCH: arm64
-  ANYKERNEL_REPO: https://github.com/osm0sis/AnyKernel3.git
+  KERNEL_REPO: https://github.com/LineageOS/android_kernel_motorola_sm7325.git
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
-      - name: Instalar dependências
+    steps:
+      - name: Checkout Kernel
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Instalar Dependências
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex git \
-            libelf-dev libssl-dev liblz4-tool libncurses5-dev lzop zip zstd \
-            device-tree-compiler
+            libelf-dev libssl-dev lz4 make python3 rsync unzip wget zip
 
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.ccache
-          key: ccache-sm7325-dubai-${{ github.sha }}
+      - name: Clonar Kernel (lineage-23.2)
+        run: git clone --depth=1 -b lineage-23.2 "$KERNEL_REPO" kernel_src
 
-      - name: Clonar Kernel
-        run: git clone --depth=1 -b lineage-23.2 "$KERNEL_REPO" "$KERNEL_DIR"
+      - name: Clonar Proton Clang
+        run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
 
-      - name: Baixar Proton Clang
+      - name: Configurar PATH
+        run: echo "$GITHUB_WORKSPACE/proton-clang/bin" >> $GITHUB_PATH
+
+      - name: Integrar KernelSU-Next
         run: |
-          mkdir -p clang
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
-          echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-
-      - name: Integrar KernelSU
-        run: |
-          cd "$KERNEL_DIR"
-          if [ "${{ github.event.inputs.kernelsu_variant }}" = "KernelSU-Next" ]; then
-            curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/v3.0.0/kernel/setup.sh | bash -s v3.0.0 legacy
-          else
-            curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s --
-          fi
+          cd kernel_src
+          curl -LSs https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/v3.0.0/kernel/setup.sh | bash -s v3.0.0 legacy
 
       - name: Configurar Kernel
         run: |
-          cd "$KERNEL_DIR"
-          make O=../$OUT_DIR ARCH=arm64 vendor/lahaina-qgki_defconfig
-          make O=../$OUT_DIR ARCH=arm64 olddefconfig
+          cd kernel_src
+          mkdir -p out
+          make O=out ARCH=arm64 vendor/lahaina-qgki_defconfig
+          make O=out ARCH=arm64 olddefconfig
 
-      - name: Compilar
+      - name: Compilar Kernel
         run: |
-          cd "$KERNEL_DIR"
-          make -j$(nproc) O=../$OUT_DIR ARCH=arm64 \
-            CC="ccache clang" \
+          cd kernel_src
+          make -j$(nproc) O=out ARCH=arm64 \
+            CC=clang \
             LLVM=1 \
-            LLVM_IAS=0 \
+            LLVM_IAS=1 \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- 2>&1 | tee build.log
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-      - name: Empacotar
+      - name: Baixar AnyKernel3
+        run: git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
+
+      - name: Preparar AnyKernel
         run: |
-          IMG=$(find $OUT_DIR -name "Image.gz-dtb" -o -name "Image" | head -n1)
-          if [ -z "$IMG" ]; then
-            echo "Build falhou!"
-            tail -n 100 build.log
-            exit 1
-          fi
-          git clone --depth=1 $ANYKERNEL_REPO anykernel
-          cp "$IMG" anykernel/
-          find $OUT_DIR -name "*.dtb" -exec cp {} anykernel/ \;
+          cp kernel_src/out/arch/arm64/boot/Image anykernel/
+          find kernel_src/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} anykernel/ \;
+          
           cd anykernel
-          zip -r9 "../dubai-kernel-5.4-ksu-$(date +%Y%m%d-%H%M).zip" . -x ".git*"
+          sed -i 's|kernel.string=.*|kernel.string=Edge 30 (dubai) - KSU Next|' anykernel.sh
+          sed -i 's|device.name1=.*|device.name1=dubai|' anykernel.sh
 
-      - name: Upload
+      - name: Criar ZIP
+        run: |
+          cd anykernel
+          zip -r9 ../Kernel_Edge30_dubai_KSU-Next.zip . -x ".git*"
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dubai-kernel-5.4-ksu
-          path: "*.zip"
-          retention-days: 14
+          name: Kernel_Edge30_dubai_KSU-Next
+          path: Kernel_Edge30_dubai_KSU-Next.zip
