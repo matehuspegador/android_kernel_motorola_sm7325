@@ -33,9 +33,9 @@ on:
         required: true
         default: "lahaina-qgki_defconfig"
       ksu_branch:
-        description: "Branch do KernelSU-Next a integrar"
+        description: "Branch do instalador do KernelSU-Next (legacy = kernels nao-GKI antigos, ex: 5.4)"
         required: true
-        default: "next"
+        default: "legacy"
       ccache:
         description: "Usar ccache para acelerar builds subsequentes"
         type: boolean
@@ -124,6 +124,14 @@ jobs:
       # ==================================================================
       # INTEGRACAO DO KERNELSU-NEXT
       # ==================================================================
+      # ------------------------------------------------------------------
+      # IMPORTANTE: usamos o branch "legacy" do instalador (nao "next").
+      # A documentacao oficial do KernelSU-Next recomenda "legacy" pra
+      # kernels nao-GKI antigos como esse 5.4 -- o branch "next" assume
+      # APIs de kernel mais novo (linux/pgtable.h, fsnotify novo com
+      # handle_inode_event etc.) e e a causa dos erros de compilacao que
+      # apareceram antes dessa mudanca.
+      # ------------------------------------------------------------------
       - name: Integrar KernelSU-Next
         working-directory: kernel
         run: |
@@ -135,19 +143,13 @@ jobs:
           echo "KernelSU-Next integrado, versao base: $KSU_VERSION"
 
       # ------------------------------------------------------------------
-      # Kernel 5.4 = antes do kernel 5.9. O header linux/pgtable.h so foi
-      # introduzido no kernel 5.9 (antes disso as funcoes de tabela de
-      # pagina ficavam so em asm/pgtable.h). O codigo do KernelSU-Next
-      # inclui <linux/pgtable.h> direto, assumindo kernel >=5.9, e falha
-      # com "fatal error: 'linux/pgtable.h' file not found" em 5.4.
-      #
-      # Fix padrao da comunidade: criar um shim minimo que so redireciona
-      # pro asm/pgtable.h de verdade -- e exatamente o que o linux/pgtable.h
-      # real faz nas versoes novas do kernel pra esse tipo de funcao basica.
-      # So criamos o shim se o header realmente nao existir nessa arvore
-      # (algumas branches 5.4 da Motorola ja tem isso backportado).
+      # Esse patch de pgtable.h era necessario com o branch "next" (kernel
+      # 5.4 nao tem linux/pgtable.h nativo). Com o branch "legacy" isso
+      # provavelmente nao e mais preciso, mas deixamos aqui como rede de
+      # seguranca -- ele so age SE o header realmente nao existir, entao
+      # e inofensivo caso o branch legacy ja resolva isso sozinho.
       # ------------------------------------------------------------------
-      - name: Patch de compatibilidade pgtable.h (kernel 5.4)
+      - name: Patch de compatibilidade pgtable.h (rede de seguranca)
         working-directory: kernel
         run: |
           if [ -f include/linux/pgtable.h ]; then
