@@ -122,23 +122,18 @@ jobs:
             echo "include/linux/pgtable.h ja existe, pulando."
           fi
      
-      - name: Desabilitar pkg_observer (incompativel com fsnotify do kernel 5.4)
+      - name: Corrigir pkg_observer.c (campo incompativel com fsnotify do kernel 5.4)
         run: |
           cd "$KERNEL_DIR"
-          OBSERVER_FILE=$(find drivers/kernelsu -name "pkg_observer.c" 2>/dev/null | head -n1)
-          if [ -n "$OBSERVER_FILE" ]; then
-            OBSERVER_DIR=$(dirname "$OBSERVER_FILE")
-            echo "Encontrado: $OBSERVER_FILE"
-            for MK in "$OBSERVER_DIR/Makefile" "drivers/kernelsu/Makefile"; do
-              if [ -f "$MK" ] && grep -q "pkg_observer" "$MK"; then
-                sed -i '/pkg_observer/d' "$MK"
-                echo "Removido de: $MK"
-              fi
-            done
+          FILE=$(find drivers/kernelsu -name "pkg_observer.c" 2>/dev/null | head -n1)
+          if [ -n "$FILE" ]; then
+            echo "Arquivo encontrado: $FILE"
+            sed -i '/\.handle_inode_event = ksu_handle_inode_event,/d' "$FILE"
+            echo "--- Resultado ---"
+            grep -n "handle_inode_event" "$FILE" || echo "OK, linha removida com sucesso"
           else
             echo "pkg_observer.c nao encontrado, pulando"
-          fi 
-      
+          fi
       
       - name: Corrigir allowlist.c (API task_work_add incompativel com kernel 5.4)
         run: |
