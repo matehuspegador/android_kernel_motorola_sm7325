@@ -57,12 +57,10 @@ jobs:
       - name: Baixar Toolchain Clang
         run: |
           mkdir -p clang
-          curl -L --progress-bar -o clang.tar.gz \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android13-release/clang-r450784e.tar.gz"
-          tar -xzf clang.tar.gz -C clang
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-          echo "✅ Clang configurado!"
-          ls clang/bin/clang* | head -n 3
+          echo "✅ Proton Clang clonado!"
+          ls -la clang/bin/clang* | head -n 3
           
       - name: Aplicar patches (pasta patches/)
         run: |
