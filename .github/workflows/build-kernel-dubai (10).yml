@@ -134,36 +134,7 @@ jobs:
       # handle_inode_event etc.) e e a causa dos erros de compilacao que
       # apareceram antes dessa mudanca.
       # ------------------------------------------------------------------
-      - name: Integrar KernelSU-Next (Legacy - Método reforçado)
-        working-directory: kernel
-        run: |
-          # Remove instalação anterior se existir
-          rm -rf KernelSU-Next drivers/kernelsu 2>/dev/null || true
 
-          # Clona o KernelSU-Next legacy diretamente
-          git clone --depth=1 -b legacy https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
-
-          # Copia os drivers
-          cp -a KernelSU-Next/kernel/drivers/* drivers/
-
-          echo "KernelSU-Next legacy copiado manualmente"
-
-          # Aplica configurações mínimas necessárias
-          cat >> ksu_fix.config << 'EOF'
-          CONFIG_KSU=y
-          CONFIG_KSU_DEBUG=y
-          CONFIG_MODULES=y
-          CONFIG_KPROBES=y
-          CONFIG_HAVE_KPROBES=y
-          CONFIG_KPROBE_EVENTS=y
-          CONFIG_OVERLAY_FS=y
-          CONFIG_KALLSYMS=y
-          CONFIG_KALLSYMS_ALL=y
-          CONFIG_OF_OVERLAY=y
-          CONFIG_OF_CONFIGFS=y
-          EOF
-
-          echo "KernelSU-Next legacy integrado."
           
       - name: DEBUG - Mostrar arquivos com erro de link (antes do patch)
         working-directory: kernel
@@ -183,7 +154,33 @@ jobs:
           echo "===== procurando definicao real de selinux_hide_init/exit ====="
           grep -rn "ksu_selinux_hide_init\|ksu_selinux_hide_exit" drivers/kernelsu/ || echo "nenhuma ocorrencia encontrada"
 
-          echo ""
+      - name: Integrar KernelSU-Next Legacy (Correção 2026)
+        working-directory: kernel
+        run: |
+          echo "Removendo instalação anterior..."
+          rm -rf KernelSU-Next drivers/kernelsu 2>/dev/null || true
+
+          echo "Clonando KernelSU-Next legacy..."
+          git clone --depth=1 -b legacy https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
+
+          echo "Copiando drivers (nova estrutura)..."
+          # Nova estrutura correta do repositório
+          if [ -d "KernelSU-Next/drivers" ]; then
+            cp -a KernelSU-Next/drivers/* drivers/ 2>/dev/null || true
+            echo "Copiado da raiz 'drivers/'"
+          elif [ -d "KernelSU-Next/kernel/drivers" ]; then
+            cp -a KernelSU-Next/kernel/drivers/* drivers/ 2>/dev/null || true
+            echo "Copiado da estrutura antiga"
+          else
+            echo "::error::Não foi possível encontrar a pasta de drivers do KernelSU-Next"
+            ls -la KernelSU-Next/
+            exit 1
+          fi
+
+          # Cria link simbólico se necessário (muitos kernels esperam drivers/kernelsu)
+          ln -s ../KernelSU-Next drivers/kernelsu 2>/dev/null || true
+
+          echo "KernelSU-Next legacy integrado com sucesso."   echo ""
           echo "===== procurando qualquer uso de path_umount ====="
           grep -rn "path_umount" drivers/kernelsu/ || echo "nenhuma ocorrencia encontrada"
 
