@@ -107,6 +107,27 @@ jobs:
           fi
 
 
+
+      - name: Corrigir allowlist.c (API task_work_add incompativel com kernel 5.4)
+        run: |
+          cd "$KERNEL_DIR"
+          FILE="drivers/kernelsu/allowlist.c"
+          if [ -f "$FILE" ]; then
+            echo "Corrigindo $FILE..."
+            
+            # Troca TWA_RESUME (kernel 5.9+) por true (kernel 5.4, terceiro param eh bool)
+            sed -i 's/task_work_add(tsk, cb, TWA_RESUME);/task_work_add(tsk, cb, true);/' "$FILE"
+            
+            # Garante o include correto pra put_task_struct
+            if ! grep -q "#include <linux/sched/task.h>" "$FILE"; then
+              sed -i '1i #include <linux/sched/task.h>' "$FILE"
+            fi
+            
+            echo "--- Resultado ---"
+            grep -n "task_work_add\|#include <linux/sched" "$FILE"
+          else
+            echo "allowlist.c nao encontrado, pulando"
+          fi
       - name: Configurar kernel + Otimizações
         run: |
           cd "$KERNEL_DIR"
