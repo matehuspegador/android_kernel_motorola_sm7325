@@ -145,6 +145,30 @@ jobs:
       # ------------------------------------------------------------------
       # A feature "selinux_hide" (esconde os hooks de kprobe dos logs do
       # SELinux) esta incompleta no branch "legacy" -- e um feature request
+    
+      
+      - name: DEBUG - Mostrar arquivos com erro de link
+        working-directory: kernel
+        run: |
+          echo "===== init.c (linhas 100-160) ====="
+          sed -n '100,160p' drivers/kernelsu/core/init.c || echo "arquivo nao encontrado nesse caminho"
+
+          echo ""
+          echo "===== hook_manager.c (linhas 370-420) ====="
+          sed -n '370,420p' drivers/kernelsu/hook/hook_manager.c || echo "arquivo nao encontrado nesse caminho"
+
+          echo ""
+          echo "===== kernel_umount.c (linhas 30-70) ====="
+          sed -n '30,70p' drivers/kernelsu/feature/kernel_umount.c || echo "arquivo nao encontrado nesse caminho"
+
+          echo ""
+          echo "===== procurando definicao real de selinux_hide_init/exit ====="
+          grep -rn "ksu_selinux_hide_init\|ksu_selinux_hide_exit" drivers/kernelsu/ || echo "nenhuma ocorrencia encontrada"
+
+          echo ""
+          echo "===== procurando qualquer uso de path_umount ====="
+          grep -rn "path_umount" drivers/kernelsu/ || echo "nenhuma ocorrencia encontrada"
+          
       # ainda em aberto no repo oficial (issue #1269), nao um bug nosso.
       # As funcoes init_kprobe/destroy_kprobe que o arquivo espera nao
       # existem nessa branch. E uma feature cosmetica/anti-deteccao, nao
