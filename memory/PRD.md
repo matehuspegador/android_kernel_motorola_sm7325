@@ -1,45 +1,79 @@
-# PRD — GitHub Actions: Build Kernel Motorola Edge 30 (dubai) + KernelSU-Next
+# PRD — GitHub Actions: Build Kernel Motorola Edge 30 (dubai) + KernelSU-Next + Gaming Patches
 
-## Problema original
-Implementar workflow (`.yml`) do GitHub Actions para compilar o kernel Android 5.4 do Motorola Edge 30 (codinome `dubai`, SoC SM7325 / Lahaina) a partir do repositório `matehuspegador/android_kernel_motorola_sm7325`, branch `lineage-20`, e integrar KernelSU ao kernel.
+## Problema
+Compilar kernel Android 5.4 do Motorola Edge 30 (dubai, SM7325) via GitHub Actions com KernelSU-Next e otimizações de desempenho para jogos, gerando UM zip AnyKernel3 flashável via ADB sideload.
 
 ## Escolhas do usuário
 - Local: `/app/.github/workflows/build-kernel.yml`
-- Toolchain: **Proton Clang** (kdrag0n)
-- Empacotamento: **AnyKernel3** (zip flashável)
-- Root: **KernelSU-Next** (via `setup.sh` oficial)
+- Kernel source: `matehuspegador/android_kernel_motorola_sm7325` branch `lineage-20`
 - Defconfig: `lahaina-qgki_defconfig`
+- Toolchain: Proton Clang (kdrag0n)
+- Root: KernelSU-Next (branch `next`)
+- Packaging: AnyKernel3 (osm0sis)
+- Gaming patches: SIM (compile-time + runtime)
 
-## Arquitetura
-- Runner: `ubuntu-22.04` do GitHub
-- Cache: `ccache` (5 GB) via `hendrikmuhs/ccache-action`
-- Clones: kernel (depth=1), proton-clang, AnyKernel3
-- Integração KernelSU-Next: `curl setup.sh | bash -s <branch>` + `CONFIG_KSU=y` + kprobes no defconfig
-- Build: `make O=out CC="ccache clang" LD=ld.lld ...`
-- Empacotamento: copia `Image.gz-dtb` / `Image.gz` / `Image` + `dtbo.img` + `dtb.img` para AnyKernel3 e gera zip
-- Artefatos: zip AnyKernel3, imagem raw, log de build (em falha)
-- Release automático opcional via `softprops/action-gh-release@v2`
+## Estrutura de arquivos entregue
+```
+/app/
+├── .github/workflows/
+│   ├── build-kernel.yml    # workflow completo (17 steps)
+│   └── README.md            # instruções de uso
+├── patches/
+│   ├── gaming.config        # fragmento de defconfig (compile-time)
+│   └── 99-gaming-tweaks.sh  # script runtime instalado em /data/adb/service.d/
+└── memory/PRD.md
+```
 
-## Entregas
-- `.github/workflows/build-kernel.yml` (workflow completo, 15 steps, validado como YAML)
-- `.github/workflows/README.md` (instruções de uso, flash, troubleshooting)
+## Gaming patches — camada 1 (compile-time, `gaming.config`)
+- BBR + FQ + FQ_CODEL (rede)
+- HZ=300, HIGH_RES_TIMERS, PREEMPT (latência)
+- ZRAM LZ4 (memória)
+- Kyber + BFQ (I/O)
+- schedutil default (CPU)
 
-## Inputs do workflow (workflow_dispatch)
-- `kernelsu_next`: true/false — integrar KernelSU-Next
-- `kernelsu_branch`: branch/tag do KernelSU-Next (`next`, `next-susfs`, tags)
-- `release`: true/false — criar Release automático
+## Gaming patches — camada 2 (runtime, `99-gaming-tweaks.sh`)
+- Scheduler tunables (latency, granularity, migration)
+- CPU: mantém todos os cores online, tira power collapse
+- GPU (KGSL): força clocks on, adrenoboost, sem nap
+- VM: swappiness, dirty ratio, watermark_scale, drop_caches inicial
+- I/O: scheduler none/mq-deadline, read-ahead 512kb UFS
+- Rede: BBR, TCP low latency, fastopen, buffers 16MB, busy_poll
+- Workqueue: power_efficient=N
+- IRQ affinity: espalha entre CPUs 0-7
+
+## Workflow (17 steps)
+1. Checkout
+2. Set up build environment
+3. Set up ccache (5GB)
+4. Prepare workspace
+5. Clone kernel source
+6. **Apply gaming defconfig fragment**
+7. Clone Proton Clang
+8. Clone AnyKernel3
+9. **Bundle gaming runtime tweaks into AnyKernel3**
+10. Integrate KernelSU-Next
+11. Build kernel
+12. Verify kernel image
+13. Package with AnyKernel3
+14. Upload kernel zip
+15. Upload raw kernel image
+16. Upload build log on failure
+17. Create GitHub Release
 
 ## Status
-- Workflow criado e validado sintaticamente (YAML OK)
-- Não é possível executar o build de kernel dentro deste ambiente (é feito no runner do GitHub Actions após push para o repo do usuário)
+- YAML validado ✅
+- Shell syntax do script runtime validado ✅
+- Sed do heredoc testado localmente ✅
+- Build real só é possível no runner do GitHub Actions após push
 
 ## Próximos passos (usuário)
-1. Copiar `.github/workflows/build-kernel.yml` para o seu repositório no GitHub
+1. Copiar `.github/workflows/build-kernel.yml`, `patches/gaming.config` e `patches/99-gaming-tweaks.sh` para o repositório GitHub
 2. Actions → Run workflow
-3. Baixar o zip AnyKernel3 gerado e flashar via TWRP/OrangeFox
+3. Baixar `Kernel-dubai-lineage20-KSUNext-Gaming-<data>.zip` da Release
+4. `adb sideload <zip>` no recovery
 
 ## Backlog / melhorias futuras
-- Suporte a matrix build (com/sem KSU em paralelo)
-- Integração SUSFS automática
-- Assinatura do zip
-- Notificação via Telegram ao finalizar build
+- SUSFS patches
+- Matrix build (com/sem KSU em paralelo)
+- Notificação Telegram
+- Módulo KSU separado para tweaks ajustáveis por perfil (jogo/normal/bateria)

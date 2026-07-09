@@ -84,6 +84,23 @@ jobs:
           cd kernel
           echo "Commit: $(git log -1 --pretty=format:'%h - %s')"
 
+      - name: Apply gaming performance defconfig fragment
+        run: |
+          cd $WORK/kernel
+          DEFCONFIG_PATH="arch/${ARCH}/configs/${KERNEL_DEFCONFIG}"
+          FRAG="${GITHUB_WORKSPACE}/patches/gaming.config"
+          if [ ! -f "$FRAG" ]; then
+            echo "ERRO: patches/gaming.config nao encontrado no repo"
+            exit 1
+          fi
+          echo "===== Fragmento gaming.config ====="
+          cat "$FRAG"
+          echo ""
+          echo "" >> "$DEFCONFIG_PATH"
+          echo "# ===== Gaming performance patches =====" >> "$DEFCONFIG_PATH"
+          cat "$FRAG" >> "$DEFCONFIG_PATH"
+          echo "Defconfig final linhas: $(wc -l < $DEFCONFIG_PATH)"
+
       - name: Clone Proton Clang
         run: |
           cd $WORK
@@ -105,6 +122,45 @@ jobs:
           sed -i 's|block=.*|block=/dev/block/bootdevice/by-name/boot;|' AnyKernel3/anykernel.sh
           sed -i 's|is_slot_device=.*|is_slot_device=1;|' AnyKernel3/anykernel.sh
           rm -rf AnyKernel3/.git AnyKernel3/README.md
+
+      - name: Bundle gaming runtime tweaks into AnyKernel3
+        run: |
+          cd $WORK/AnyKernel3
+          TWEAKS_SRC="${GITHUB_WORKSPACE}/patches/99-gaming-tweaks.sh"
+          if [ ! -f "$TWEAKS_SRC" ]; then
+            echo "ERRO: patches/99-gaming-tweaks.sh nao encontrado no repo"
+            exit 1
+          fi
+          mkdir -p tools
+          cp "$TWEAKS_SRC" tools/99-gaming-tweaks.sh
+          chmod 755 tools/99-gaming-tweaks.sh
+
+          # Injeta bloco no anykernel.sh para copiar o script para /data/adb/service.d/
+          # (executado apos as etapas de flash do kernel, quando /data esta disponivel)
+          cat >> anykernel.sh <<'AKEOF'
+
+          ## ===== Gaming Tweaks Auto-Install =====
+          ui_print " ";
+          ui_print "Instalando otimizacoes de jogos...";
+          if [ -d /data/adb ]; then
+            mkdir -p /data/adb/service.d;
+            cp -f $home/tools/99-gaming-tweaks.sh /data/adb/service.d/99-gaming-tweaks.sh;
+            chmod 0755 /data/adb/service.d/99-gaming-tweaks.sh;
+            ui_print "  -> /data/adb/service.d/99-gaming-tweaks.sh instalado.";
+            ui_print "  -> Sera executado pelo KernelSU a cada boot.";
+          else
+            ui_print "  AVISO: /data nao acessivel (encriptado?).";
+            ui_print "  Copie manualmente apos primeiro boot:";
+            ui_print "    adb push 99-gaming-tweaks.sh /data/adb/service.d/";
+            ui_print "    adb shell su -c chmod 755 /data/adb/service.d/99-gaming-tweaks.sh";
+          fi
+          ui_print " ";
+          ## ===== fim gaming tweaks =====
+          AKEOF
+          # Remove os 10 espacos de indentacao YAML das linhas adicionadas ao anykernel.sh
+          sed -i '/## ===== Gaming Tweaks Auto-Install =====/,/## ===== fim gaming tweaks =====/{s/^          //}' anykernel.sh
+          echo "===== anykernel.sh atualizado ====="
+          tail -n 30 anykernel.sh
 
       - name: Integrate KernelSU-Next
         if: ${{ github.event.inputs.kernelsu_next != 'false' }}
@@ -206,7 +262,7 @@ jobs:
           if [ "${{ github.event.inputs.kernelsu_next }}" != "false" ]; then
             KSU_TAG="-KSUNext"
           fi
-          ZIP_NAME="Kernel-dubai-lineage20${KSU_TAG}-${BUILD_DATE}.zip"
+          ZIP_NAME="Kernel-dubai-lineage20${KSU_TAG}-Gaming-${BUILD_DATE}.zip"
 
           cd AnyKernel3
           zip -r9 "../${ZIP_NAME}" . -x ".git*" -x "README.md"
@@ -249,10 +305,17 @@ jobs:
           body: |
             **Device:** Motorola Edge 30 (dubai)
             **Kernel source:** ${{ env.KERNEL_REPO }} (branch `${{ env.KERNEL_BRANCH }}`)
-            **Defconfig:** `${{ env.KERNEL_DEFCONFIG }}`
+            **Defconfig:** `${{ env.KERNEL_DEFCONFIG }}` + fragmento `patches/gaming.config`
             **Toolchain:** Proton Clang (kdrag0n)
             **KernelSU-Next:** ${{ github.event.inputs.kernelsu_next }} (branch `${{ github.event.inputs.kernelsu_branch }}`) ${{ env.KSU_NEXT_VERSION }}
-            **AnyKernel3 flashable zip.**
+            **Gaming patches:**
+              - BBR + FQ + low latency TCP
+              - HZ_300 + high-res timers + PREEMPT
+              - ZRAM LZ4 + kyber/bfq I/O
+              - Runtime tweaks em `/data/adb/service.d/99-gaming-tweaks.sh`
+                (CPU/GPU boost, VM, IO, network, IRQ affinity)
+
+            **AnyKernel3 zip flashavel via TWRP/OrangeFox ou ADB sideload.**
 
             > Build automatizado via GitHub Actions.
           files: ${{ env.ZIP_PATH }}
