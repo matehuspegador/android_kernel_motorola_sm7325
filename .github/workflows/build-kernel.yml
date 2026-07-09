@@ -188,7 +188,14 @@ jobs:
           BRANCH="${{ github.event.inputs.kernelsu_branch }}"
           if [ -z "$BRANCH" ]; then BRANCH="next"; fi
           echo "Integrando KernelSU-Next branch/tag: $BRANCH"
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s "$BRANCH"
+          # setup.sh do KernelSU-Next tenta "git checkout $1"; quando $1 == default branch,
+          # o git retorna "pathspec did not match" (inofensivo — o script cai no fallback).
+          # Se a branch pedida for a default ("next"), rodamos sem argumento para evitar o warning.
+          if [ "$BRANCH" = "next" ]; then
+            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash
+          else
+            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s "$BRANCH"
+          fi
           # Ativar CONFIG_KSU no defconfig
           DEFCONFIG_PATH="arch/${ARCH}/configs/${KERNEL_DEFCONFIG}"
           if [ -f "$DEFCONFIG_PATH" ]; then
