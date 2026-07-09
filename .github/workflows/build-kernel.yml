@@ -249,6 +249,9 @@ jobs:
           #   copy_to_kernel_nofault       -> probe_kernel_write           (5.8)
           #   strncpy_from_kernel_nofault  -> strncpy_from_unsafe          (5.8)
           #
+          # Funcoes que NAO existem no 5.4 e precisam de stub:
+          #   security_inode_init_security_anon (5.12) -> retorna 0
+          #
           # Aplicamos apenas nos fontes do KernelSU (nao mexemos no resto do kernel).
           TARGET_DIRS="drivers/kernelsu KernelSU-Next"
           for d in $TARGET_DIRS; do
@@ -262,9 +265,33 @@ jobs:
                 -e 's/\bcopy_to_kernel_nofault\b/probe_kernel_write/g' \
                 -e 's/\bstrncpy_from_kernel_nofault\b/strncpy_from_unsafe/g'
           done
+
+          # ---------------------------------------------------------------
+          # Stub para security_inode_init_security_anon (nao existe em 5.4)
+          # Injetamos uma stub inline nos .c do KSU que usam essa funcao.
+          # ---------------------------------------------------------------
+          STUB='#ifndef KSU_COMPAT_SECANON_STUB\n#define KSU_COMPAT_SECANON_STUB\n#include <linux/security.h>\nstatic inline int security_inode_init_security_anon(struct inode *inode,\n    const struct qstr *name, const struct inode *context_inode) { return 0; }\n#endif'
+
+          for f in $(find -L $TARGET_DIRS -type f -name "*.c" 2>/dev/null); do
+            if grep -q "security_inode_init_security_anon" "$f" && ! grep -q "KSU_COMPAT_SECANON_STUB" "$f"; then
+              echo "Injetando stub em: $f"
+              # Insere o stub logo apos o primeiro grupo de #include
+              awk -v stub="$STUB" '
+                BEGIN { done=0; in_includes=0 }
+                /^#include/ { in_includes=1; print; next }
+                in_includes && !/^#include/ && !done {
+                  gsub(/\\n/, "\n", stub)
+                  print ""; print stub; print ""
+                  done=1
+                }
+                { print }
+              ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+            fi
+          done
+
           echo "===== Verificando substituicoes ====="
           grep -rn --include="*.c" --include="*.h" \
-            "strncpy_from_unsafe_user\|probe_kernel_read\|probe_kernel_write" \
+            "strncpy_from_unsafe_user\|probe_kernel_read\|KSU_COMPAT_SECANON_STUB" \
             KernelSU-Next/ 2>/dev/null | head -20 || true
 
       - name: Build kernel
