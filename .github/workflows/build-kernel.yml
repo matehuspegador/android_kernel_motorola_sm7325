@@ -181,6 +181,31 @@ jobs:
           echo "===== anykernel.sh atualizado ====="
           tail -n 30 anykernel.sh
 
+      - name: Apply kernel 5.4 backport shims (for KernelSU-Next)
+        run: |
+          cd $WORK/kernel
+          # linux/pgtable.h so existe a partir de 5.8. No 5.4 e alias de asm/pgtable.h.
+          # KernelSU-Next inclui <linux/pgtable.h> — criamos um shim para compilar.
+          SHIM="include/linux/pgtable.h"
+          if [ ! -f "$SHIM" ]; then
+            echo "Criando shim $SHIM (backport para kernel 5.4)"
+            mkdir -p include/linux
+            cat > "$SHIM" <<'PGT_EOF'
+          /* Backport shim: linux/pgtable.h nao existe no kernel 5.4.
+           * Redireciona para asm/pgtable.h (mesmo conteudo). */
+          #ifndef _LINUX_PGTABLE_H
+          #define _LINUX_PGTABLE_H
+          #include <asm/pgtable.h>
+          #endif /* _LINUX_PGTABLE_H */
+          PGT_EOF
+            # Remove indentacao YAML (10 espacos) mantendo indentacao interna
+            sed -i 's/^          //' "$SHIM"
+            echo "===== $SHIM ====="
+            cat "$SHIM"
+          else
+            echo "$SHIM ja existe, pulando."
+          fi
+
       - name: Integrate KernelSU-Next
         if: ${{ github.event.inputs.kernelsu_next != 'false' }}
         run: |
