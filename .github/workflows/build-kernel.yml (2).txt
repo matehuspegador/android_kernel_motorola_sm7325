@@ -1,0 +1,344 @@
+name: Build Kernel - Motorola Edge 30 (dubai) + KernelSU-Next
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernelsu_next:
+        description: "Integrar KernelSU-Next"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      kernelsu_branch:
+        description: "Branch/tag do KernelSU-Next (ex: next, next-susfs, v1.0.5)"
+        required: true
+        default: "next"
+      release:
+        description: "Criar Release automático"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - ".github/workflows/build-kernel.yml"
+
+env:
+  KERNEL_REPO: "https://github.com/matehuspegador/android_kernel_motorola_sm7325"
+  KERNEL_BRANCH: "lineage-20"
+  KERNEL_DEFCONFIG: "vendor/lahaina-qgki_defconfig"
+  DEVICE_CODENAME: "dubai"
+  DEVICE_NAME: "Motorola Edge 30"
+  ARCH: "arm64"
+  SUBARCH: "arm64"
+  KBUILD_BUILD_USER: "github-actions"
+  KBUILD_BUILD_HOST: "ci"
+  TZ: "America/Sao_Paulo"
+
+jobs:
+  build:
+    name: Build Kernel 5.4 (Proton Clang + AnyKernel3)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout workflow repo
+        uses: actions/checkout@v4
+
+      - name: Set up build environment
+        run: |
+          set -e
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            bc bison build-essential ccache curl flex g++-multilib \
+            gcc-multilib git git-lfs gnupg gperf imagemagick lib32ncurses5-dev \
+            lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev \
+            libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool \
+            squashfs-tools xsltproc zip zlib1g-dev python3 python3-pip \
+            libarchive-tools cpio kmod device-tree-compiler
+          echo "JOBS=$(nproc --all)" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
+
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: kernel-dubai-${{ github.ref }}
+          max-size: 5G
+
+      - name: Prepare workspace
+        run: |
+          mkdir -p $HOME/work
+          echo "WORK=$HOME/work" >> $GITHUB_ENV
+
+      - name: Clone kernel source (${{ env.KERNEL_BRANCH }})
+        run: |
+          cd $WORK
+          git clone --depth=1 -b "$KERNEL_BRANCH" "$KERNEL_REPO" kernel
+          cd kernel
+          echo "Commit: $(git log -1 --pretty=format:'%h - %s')"
+
+      - name: Apply gaming performance defconfig fragment
+        run: |
+          cd $WORK/kernel
+          DEFCONFIG_PATH="arch/${ARCH}/configs/${KERNEL_DEFCONFIG}"
+          if [ ! -f "$DEFCONFIG_PATH" ]; then
+            echo "AVISO: $DEFCONFIG_PATH nao encontrado. Procurando alternativas..."
+            echo "Conteudo de arch/${ARCH}/configs/:"
+            ls -la arch/${ARCH}/configs/ || true
+            echo "Conteudo de arch/${ARCH}/configs/vendor/ (se existir):"
+            ls -la arch/${ARCH}/configs/vendor/ 2>/dev/null || true
+            # Tenta encontrar automaticamente
+            FOUND=$(find arch/${ARCH}/configs/ -name "lahaina-qgki_defconfig" -o -name "dubai_defconfig" -o -name "*dubai*" 2>/dev/null | head -1)
+            if [ -n "$FOUND" ]; then
+              REL=${FOUND#arch/${ARCH}/configs/}
+              echo "Detectado defconfig: $REL"
+              echo "KERNEL_DEFCONFIG=$REL" >> $GITHUB_ENV
+              export KERNEL_DEFCONFIG="$REL"
+              DEFCONFIG_PATH="$FOUND"
+            else
+              echo "ERRO: nenhum defconfig lahaina/dubai encontrado"
+              exit 1
+            fi
+          fi
+          FRAG="${GITHUB_WORKSPACE}/patches/gaming.config"
+          if [ ! -f "$FRAG" ]; then
+            echo "ERRO: patches/gaming.config nao encontrado no repo"
+            exit 1
+          fi
+          echo "===== Fragmento gaming.config ====="
+          cat "$FRAG"
+          echo ""
+          echo "" >> "$DEFCONFIG_PATH"
+          echo "# ===== Gaming performance patches =====" >> "$DEFCONFIG_PATH"
+          cat "$FRAG" >> "$DEFCONFIG_PATH"
+          echo "Defconfig usado: $DEFCONFIG_PATH ($(wc -l < $DEFCONFIG_PATH) linhas)"
+
+      - name: Clone Proton Clang
+        run: |
+          cd $WORK
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
+          echo "$WORK/proton-clang/bin" >> $GITHUB_PATH
+
+      - name: Clone AnyKernel3
+        run: |
+          cd $WORK
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+          # Configuração para dubai / sm7325 (lahaina)
+          sed -i 's|kernel.string=.*|kernel.string=Kernel 5.4 for Motorola Edge 30 (dubai) by GitHub Actions|' AnyKernel3/anykernel.sh
+          sed -i 's|do.devicecheck=.*|do.devicecheck=1|' AnyKernel3/anykernel.sh
+          sed -i 's|device.name1=.*|device.name1=dubai|' AnyKernel3/anykernel.sh
+          sed -i 's|device.name2=.*|device.name2=Edge30|' AnyKernel3/anykernel.sh
+          sed -i 's|device.name3=.*|device.name3=edge30|' AnyKernel3/anykernel.sh
+          sed -i 's|device.name4=.*|device.name4=motoedge30|' AnyKernel3/anykernel.sh
+          sed -i 's|supported.versions=.*|supported.versions=|' AnyKernel3/anykernel.sh
+          sed -i 's|block=.*|block=/dev/block/bootdevice/by-name/boot;|' AnyKernel3/anykernel.sh
+          sed -i 's|is_slot_device=.*|is_slot_device=1;|' AnyKernel3/anykernel.sh
+          rm -rf AnyKernel3/.git AnyKernel3/README.md
+
+      - name: Bundle gaming runtime tweaks into AnyKernel3
+        run: |
+          cd $WORK/AnyKernel3
+          TWEAKS_SRC="${GITHUB_WORKSPACE}/patches/99-gaming-tweaks.sh"
+          if [ ! -f "$TWEAKS_SRC" ]; then
+            echo "ERRO: patches/99-gaming-tweaks.sh nao encontrado no repo"
+            exit 1
+          fi
+          mkdir -p tools
+          cp "$TWEAKS_SRC" tools/99-gaming-tweaks.sh
+          chmod 755 tools/99-gaming-tweaks.sh
+
+          # Injeta bloco no anykernel.sh para copiar o script para /data/adb/service.d/
+          # (executado apos as etapas de flash do kernel, quando /data esta disponivel)
+          cat >> anykernel.sh <<'AKEOF'
+
+          ## ===== Gaming Tweaks Auto-Install =====
+          ui_print " ";
+          ui_print "Instalando otimizacoes de jogos...";
+          if [ -d /data/adb ]; then
+            mkdir -p /data/adb/service.d;
+            cp -f $home/tools/99-gaming-tweaks.sh /data/adb/service.d/99-gaming-tweaks.sh;
+            chmod 0755 /data/adb/service.d/99-gaming-tweaks.sh;
+            ui_print "  -> /data/adb/service.d/99-gaming-tweaks.sh instalado.";
+            ui_print "  -> Sera executado pelo KernelSU a cada boot.";
+          else
+            ui_print "  AVISO: /data nao acessivel (encriptado?).";
+            ui_print "  Copie manualmente apos primeiro boot:";
+            ui_print "    adb push 99-gaming-tweaks.sh /data/adb/service.d/";
+            ui_print "    adb shell su -c chmod 755 /data/adb/service.d/99-gaming-tweaks.sh";
+          fi
+          ui_print " ";
+          ## ===== fim gaming tweaks =====
+          AKEOF
+          # Remove os 10 espacos de indentacao YAML das linhas adicionadas ao anykernel.sh
+          sed -i '/## ===== Gaming Tweaks Auto-Install =====/,/## ===== fim gaming tweaks =====/{s/^          //}' anykernel.sh
+          echo "===== anykernel.sh atualizado ====="
+          tail -n 30 anykernel.sh
+
+      - name: Integrate KernelSU-Next
+        if: ${{ github.event.inputs.kernelsu_next != 'false' }}
+        run: |
+          cd $WORK/kernel
+          BRANCH="${{ github.event.inputs.kernelsu_branch }}"
+          if [ -z "$BRANCH" ]; then BRANCH="next"; fi
+          echo "Integrando KernelSU-Next branch/tag: $BRANCH"
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s "$BRANCH"
+          # Ativar CONFIG_KSU no defconfig
+          DEFCONFIG_PATH="arch/${ARCH}/configs/${KERNEL_DEFCONFIG}"
+          if [ -f "$DEFCONFIG_PATH" ]; then
+            grep -q "CONFIG_KSU" "$DEFCONFIG_PATH" || echo "CONFIG_KSU=y" >> "$DEFCONFIG_PATH"
+            grep -q "CONFIG_KPROBES" "$DEFCONFIG_PATH" || echo "CONFIG_KPROBES=y" >> "$DEFCONFIG_PATH"
+            grep -q "CONFIG_HAVE_KPROBES" "$DEFCONFIG_PATH" || echo "CONFIG_HAVE_KPROBES=y" >> "$DEFCONFIG_PATH"
+            grep -q "CONFIG_KPROBE_EVENTS" "$DEFCONFIG_PATH" || echo "CONFIG_KPROBE_EVENTS=y" >> "$DEFCONFIG_PATH"
+          else
+            echo "AVISO: defconfig $DEFCONFIG_PATH não encontrado"
+            ls arch/${ARCH}/configs/ | head -40
+            exit 1
+          fi
+          # Registrar versão do KernelSU-Next
+          if [ -d "KernelSU-Next" ]; then
+            cd KernelSU-Next && echo "KSU_NEXT_VERSION=$(git describe --tags --always 2>/dev/null || echo unknown)" >> $GITHUB_ENV
+          fi
+
+      - name: Build kernel
+        run: |
+          set -e
+          cd $WORK/kernel
+          export PATH="$WORK/proton-clang/bin:$PATH"
+          export ARCH=${ARCH}
+          export SUBARCH=${SUBARCH}
+          export KBUILD_BUILD_USER=${KBUILD_BUILD_USER}
+          export KBUILD_BUILD_HOST=${KBUILD_BUILD_HOST}
+
+          MAKE_ARGS=(
+            -j${JOBS}
+            O=out
+            ARCH=${ARCH}
+            CC="ccache clang"
+            LD=ld.lld
+            AR=llvm-ar
+            NM=llvm-nm
+            OBJCOPY=llvm-objcopy
+            OBJDUMP=llvm-objdump
+            STRIP=llvm-strip
+            READELF=llvm-readelf
+            HOSTCC=clang
+            HOSTCXX=clang++
+            HOSTAR=llvm-ar
+            HOSTLD=ld.lld
+            CROSS_COMPILE=aarch64-linux-gnu-
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+            CLANG_TRIPLE=aarch64-linux-gnu-
+          )
+
+          echo "===== make ${KERNEL_DEFCONFIG} ====="
+          make "${MAKE_ARGS[@]}" ${KERNEL_DEFCONFIG}
+
+          echo "===== make kernel ====="
+          make "${MAKE_ARGS[@]}" 2>&1 | tee build.log
+
+          echo "===== Artefatos gerados ====="
+          ls -la out/arch/${ARCH}/boot/ || true
+
+      - name: Verify kernel image
+        run: |
+          cd $WORK/kernel
+          IMG="out/arch/${ARCH}/boot/Image.gz-dtb"
+          if [ ! -f "$IMG" ]; then
+            IMG="out/arch/${ARCH}/boot/Image.gz"
+          fi
+          if [ ! -f "$IMG" ]; then
+            IMG="out/arch/${ARCH}/boot/Image"
+          fi
+          if [ ! -f "$IMG" ]; then
+            echo "ERRO: nenhuma imagem de kernel encontrada"
+            ls -la out/arch/${ARCH}/boot/ || true
+            tail -n 200 build.log || true
+            exit 1
+          fi
+          echo "KERNEL_IMG=$IMG" >> $GITHUB_ENV
+          echo "Imagem de kernel: $IMG ($(du -h $IMG | cut -f1))"
+
+      - name: Package with AnyKernel3
+        run: |
+          cd $WORK
+          cp kernel/${KERNEL_IMG} AnyKernel3/
+          # Copiar dtbo e dtb se existirem
+          if [ -f "kernel/out/arch/${ARCH}/boot/dtbo.img" ]; then
+            cp kernel/out/arch/${ARCH}/boot/dtbo.img AnyKernel3/
+          fi
+          if [ -f "kernel/out/arch/${ARCH}/boot/dtb.img" ]; then
+            cp kernel/out/arch/${ARCH}/boot/dtb.img AnyKernel3/
+          fi
+
+          KSU_TAG=""
+          if [ "${{ github.event.inputs.kernelsu_next }}" != "false" ]; then
+            KSU_TAG="-KSUNext"
+          fi
+          ZIP_NAME="Kernel-dubai-lineage20${KSU_TAG}-Gaming-${BUILD_DATE}.zip"
+
+          cd AnyKernel3
+          zip -r9 "../${ZIP_NAME}" . -x ".git*" -x "README.md"
+          cd ..
+          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
+          echo "ZIP_PATH=${WORK}/${ZIP_NAME}" >> $GITHUB_ENV
+          ls -la "${ZIP_NAME}"
+
+      - name: Upload kernel zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_PATH }}
+          if-no-files-found: error
+
+      - name: Upload raw kernel image
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-image-${{ env.BUILD_DATE }}
+          path: |
+            ${{ env.WORK }}/kernel/out/arch/${{ env.ARCH }}/boot/Image*
+            ${{ env.WORK }}/kernel/out/arch/${{ env.ARCH }}/boot/dtb*
+            ${{ env.WORK }}/kernel/out/arch/${{ env.ARCH }}/boot/dtbo*
+          if-no-files-found: warn
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ env.BUILD_DATE }}
+          path: ${{ env.WORK }}/kernel/build.log
+          if-no-files-found: ignore
+
+      - name: Create GitHub Release
+        if: ${{ github.event.inputs.release == 'true' && success() }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "kernel-dubai-${{ env.BUILD_DATE }}"
+          name: "Kernel dubai (Edge 30) - ${{ env.BUILD_DATE }}"
+          body: |
+            **Device:** Motorola Edge 30 (dubai)
+            **Kernel source:** ${{ env.KERNEL_REPO }} (branch `${{ env.KERNEL_BRANCH }}`)
+            **Defconfig:** `${{ env.KERNEL_DEFCONFIG }}` + fragmento `patches/gaming.config`
+            **Toolchain:** Proton Clang (kdrag0n)
+            **KernelSU-Next:** ${{ github.event.inputs.kernelsu_next }} (branch `${{ github.event.inputs.kernelsu_branch }}`) ${{ env.KSU_NEXT_VERSION }}
+            **Gaming patches:**
+              - BBR + FQ + low latency TCP
+              - HZ_300 + high-res timers + PREEMPT
+              - ZRAM LZ4 + kyber/bfq I/O
+              - Runtime tweaks em `/data/adb/service.d/99-gaming-tweaks.sh`
+                (CPU/GPU boost, VM, IO, network, IRQ affinity)
+
+            **AnyKernel3 zip flashavel via TWRP/OrangeFox ou ADB sideload.**
+
+            > Build automatizado via GitHub Actions.
+          files: ${{ env.ZIP_PATH }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
