@@ -12,9 +12,9 @@ on:
           - "true"
           - "false"
       kernelsu_branch:
-        description: "Branch/tag do KernelSU-Next (ex: next, next-susfs, v1.0.5)"
+        description: "Branch do KernelSU-Next: 'next' (5.10+ GKI 2.0), 'legacy' (4.4–5.4 non-GKI, recomendado para kernel 5.4), ou uma tag específica"
         required: true
-        default: "next"
+        default: "legacy"
       release:
         description: "Criar Release automático"
         required: true
@@ -184,6 +184,8 @@ jobs:
       - name: Apply kernel 5.4 backport shims (for KernelSU-Next)
         run: |
           cd $WORK/kernel
+          # NOTA: A branch "legacy" do KernelSU-Next ja tem estes backports embutidos.
+          # Este step atua como salvaguarda defensiva para outras branches (ex: next).
           # ---------------------------------------------------------------
           # 1) Shim de header: linux/pgtable.h nao existe no 5.4 (introduzido no 5.8)
           # ---------------------------------------------------------------
@@ -209,7 +211,7 @@ jobs:
         run: |
           cd $WORK/kernel
           BRANCH="${{ github.event.inputs.kernelsu_branch }}"
-          if [ -z "$BRANCH" ]; then BRANCH="next"; fi
+          if [ -z "$BRANCH" ]; then BRANCH="legacy"; fi
           echo "Integrando KernelSU-Next branch/tag: $BRANCH"
           # setup.sh do KernelSU-Next tenta "git checkout $1"; quando $1 == default branch,
           # o git retorna "pathspec did not match" (inofensivo — o script cai no fallback).
