@@ -33,7 +33,7 @@ on:
 env:
   KERNEL_REPO: "https://github.com/matehuspegador/android_kernel_motorola_sm7325"
   KERNEL_BRANCH: "lineage-20"
-  KERNEL_DEFCONFIG: "lahaina-qgki_defconfig"
+  KERNEL_DEFCONFIG: "vendor/lahaina-qgki_defconfig"
   DEVICE_CODENAME: "dubai"
   DEVICE_NAME: "Motorola Edge 30"
   ARCH: "arm64"
@@ -88,6 +88,25 @@ jobs:
         run: |
           cd $WORK/kernel
           DEFCONFIG_PATH="arch/${ARCH}/configs/${KERNEL_DEFCONFIG}"
+          if [ ! -f "$DEFCONFIG_PATH" ]; then
+            echo "AVISO: $DEFCONFIG_PATH nao encontrado. Procurando alternativas..."
+            echo "Conteudo de arch/${ARCH}/configs/:"
+            ls -la arch/${ARCH}/configs/ || true
+            echo "Conteudo de arch/${ARCH}/configs/vendor/ (se existir):"
+            ls -la arch/${ARCH}/configs/vendor/ 2>/dev/null || true
+            # Tenta encontrar automaticamente
+            FOUND=$(find arch/${ARCH}/configs/ -name "lahaina-qgki_defconfig" -o -name "dubai_defconfig" -o -name "*dubai*" 2>/dev/null | head -1)
+            if [ -n "$FOUND" ]; then
+              REL=${FOUND#arch/${ARCH}/configs/}
+              echo "Detectado defconfig: $REL"
+              echo "KERNEL_DEFCONFIG=$REL" >> $GITHUB_ENV
+              export KERNEL_DEFCONFIG="$REL"
+              DEFCONFIG_PATH="$FOUND"
+            else
+              echo "ERRO: nenhum defconfig lahaina/dubai encontrado"
+              exit 1
+            fi
+          fi
           FRAG="${GITHUB_WORKSPACE}/patches/gaming.config"
           if [ ! -f "$FRAG" ]; then
             echo "ERRO: patches/gaming.config nao encontrado no repo"
@@ -99,7 +118,7 @@ jobs:
           echo "" >> "$DEFCONFIG_PATH"
           echo "# ===== Gaming performance patches =====" >> "$DEFCONFIG_PATH"
           cat "$FRAG" >> "$DEFCONFIG_PATH"
-          echo "Defconfig final linhas: $(wc -l < $DEFCONFIG_PATH)"
+          echo "Defconfig usado: $DEFCONFIG_PATH ($(wc -l < $DEFCONFIG_PATH) linhas)"
 
       - name: Clone Proton Clang
         run: |
