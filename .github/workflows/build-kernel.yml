@@ -267,16 +267,21 @@ jobs:
           done
 
           # ---------------------------------------------------------------
-          # Stub para security_inode_init_security_anon (nao existe em 5.4)
-          # Injetamos uma stub inline nos .c do KSU que usam essa funcao.
+          # Stubs de simbolos que nao existem no kernel 5.4
           # ---------------------------------------------------------------
-          STUB='#ifndef KSU_COMPAT_SECANON_STUB\n#define KSU_COMPAT_SECANON_STUB\n#include <linux/security.h>\nstatic inline int security_inode_init_security_anon(struct inode *inode,\n    const struct qstr *name, const struct inode *context_inode) { return 0; }\n#endif'
+          # 1) security_inode_init_security_anon (5.12) -> stub inline retornando 0
+          # 2) SECCOMP_ARCH_NATIVE_NR (5.11)            -> #define 512 (cobre todos os syscalls arm64 do 5.4)
+          # ---------------------------------------------------------------
 
-          for f in $(find -L $TARGET_DIRS -type f -name "*.c" 2>/dev/null); do
-            if grep -q "security_inode_init_security_anon" "$f" && ! grep -q "KSU_COMPAT_SECANON_STUB" "$f"; then
-              echo "Injetando stub em: $f"
-              # Insere o stub logo apos o primeiro grupo de #include
-              awk -v stub="$STUB" '
+          STUB_SECANON='#ifndef KSU_COMPAT_SECANON_STUB\n#define KSU_COMPAT_SECANON_STUB\n#include <linux/security.h>\nstatic inline int security_inode_init_security_anon(struct inode *inode,\n    const struct qstr *name, const struct inode *context_inode) { return 0; }\n#endif'
+
+          STUB_SECCOMP='#ifndef KSU_COMPAT_SECCOMP_ARCH_NATIVE_NR\n#define KSU_COMPAT_SECCOMP_ARCH_NATIVE_NR\n#ifndef SECCOMP_ARCH_NATIVE_NR\n#define SECCOMP_ARCH_NATIVE_NR 512\n#endif\n#endif'
+
+          inject_stub() {
+            local file="$1" symbol="$2" guard="$3" stub="$4"
+            if grep -q "$symbol" "$file" && ! grep -q "$guard" "$file"; then
+              echo "  Injetando stub '$symbol' em: $file"
+              awk -v stub="$stub" '
                 BEGIN { done=0; in_includes=0 }
                 /^#include/ { in_includes=1; print; next }
                 in_includes && !/^#include/ && !done {
@@ -285,14 +290,19 @@ jobs:
                   done=1
                 }
                 { print }
-              ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+              ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
             fi
+          }
+
+          for f in $(find -L $TARGET_DIRS -type f -name "*.c" 2>/dev/null); do
+            inject_stub "$f" "security_inode_init_security_anon" "KSU_COMPAT_SECANON_STUB" "$STUB_SECANON"
+            inject_stub "$f" "SECCOMP_ARCH_NATIVE_NR" "KSU_COMPAT_SECCOMP_ARCH_NATIVE_NR" "$STUB_SECCOMP"
           done
 
           echo "===== Verificando substituicoes ====="
           grep -rn --include="*.c" --include="*.h" \
-            "strncpy_from_unsafe_user\|probe_kernel_read\|KSU_COMPAT_SECANON_STUB" \
-            KernelSU-Next/ 2>/dev/null | head -20 || true
+            "strncpy_from_unsafe_user\|probe_kernel_read\|KSU_COMPAT_SECANON_STUB\|KSU_COMPAT_SECCOMP_ARCH_NATIVE_NR" \
+            KernelSU-Next/ 2>/dev/null | head -30 || true
 
       - name: Build kernel
         run: |
