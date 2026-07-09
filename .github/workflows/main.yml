@@ -14,7 +14,7 @@ on:
       kernelsu_branch:
         description: "Branch do KernelSU-Next: 'next' (5.10+ GKI 2.0), 'legacy' (4.4–5.4 non-GKI, recomendado para kernel 5.4), ou uma tag específica"
         required: true
-        default: "legacy"
+        default: "v1.0.5"
       release:
         description: "Criar Release automático"
         required: true
@@ -237,6 +237,36 @@ jobs:
           if [ -d "KernelSU-Next" ]; then
             cd KernelSU-Next && echo "KSU_NEXT_VERSION=$(git describe --tags --always 2>/dev/null || echo unknown)" >> $GITHUB_ENV
           fi
+
+      - name: Disable unsupported KernelSU SELinux Hide on 5.4
+        if: ${{ github.event.inputs.kernelsu_next != 'false' }}
+        run: |
+          cd $WORK/kernel
+
+          for d in drivers/kernelsu KernelSU-Next; do
+            [ -d "$d" ] || continue
+
+            if [ -f "$d/feature/selinux_hide.c" ]; then
+              echo "Desabilitando SELinux Hide em $d"
+
+              sed -i '1i\
+
+              echo '#endif' >> "$d/feature/selinux_hide.c"
+           fi
+
+            if [ -f "$d/feature/Makefile" ]; then
+              sed -i \
+                -e '/selinux_hide\.o/d' \
+                "$d/feature/Makefile"
+            fi
+
+            if [ -f "$d/feature/Kconfig" ]; then
+              sed -i \
+                '/config KSU_SELINUX_HIDE/,/^$/d' \
+                "$d/feature/Kconfig"
+            fi
+          done
+          
 
       - name: Patch KernelSU-Next for kernel 5.4 API compat
         if: ${{ github.event.inputs.kernelsu_next != 'false' }}
