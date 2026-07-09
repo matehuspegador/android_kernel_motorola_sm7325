@@ -20,7 +20,6 @@
 # - Builda Image + dtbs + dtbo.img NUMA UNICA chamada de make (fix do erro)
 # - Empacota tudo num AnyKernel3 flashavel e sobe como artifact
 # =============================================================================
-
 name: Build Kernel dubai (edge 30) + KernelSU-Next
 
 on:
